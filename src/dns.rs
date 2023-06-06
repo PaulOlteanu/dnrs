@@ -14,7 +14,7 @@ pub use question::Question;
 
 mod record;
 use num_derive::{FromPrimitive, ToPrimitive};
-pub use record::Record;
+pub use record::{Record, RecordData};
 
 #[derive(FromPrimitive, ToPrimitive, Debug)]
 pub enum RecordType {

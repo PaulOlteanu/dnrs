@@ -40,10 +40,10 @@ impl Networkable for Question {
     }
 
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
-        let name = Name::from_bytes(bytes)?;
+        let name = Name::from_bytes(bytes).unwrap();
 
         let type_ = bytes.get_u16();
-        let type_ = RecordType::from_u16(type_).ok_or(())?;
+        let type_ = RecordType::from_u16(type_).unwrap();
 
         let class = bytes.get_u16();
 

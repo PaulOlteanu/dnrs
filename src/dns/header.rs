@@ -71,6 +71,12 @@ pub struct Header {
     pub ar_count: u16,
 }
 
+impl Header {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
 impl Networkable for Header {
     type Error = ();
 

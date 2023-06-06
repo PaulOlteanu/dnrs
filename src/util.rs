@@ -4,7 +4,7 @@ pub fn create_query(domain_name: &str, record_type: RecordType) -> Result<Vec<u8
     let id = rand::random::<u16>();
 
     let mut flags = Flags::new();
-    flags.set_rd(true);
+    flags.set_rd(false);
 
     let header = Header {
         id,

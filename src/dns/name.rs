@@ -31,7 +31,7 @@ impl Networkable for Name {
     }
 
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
-        let mut name = String::new();
+        let mut parts: Vec<String> = Vec::new();
         loop {
             let len = bytes.get_u8() as usize;
             if len == 0 {
@@ -45,7 +45,7 @@ impl Networkable for Name {
                 bytes.set_position(pointer as u64);
                 let n = Self::from_bytes(bytes)?;
                 bytes.set_position(position);
-                name.push_str(&n.0);
+                parts.push(n.0);
                 break;
             } else {
                 // Uncompressed
@@ -55,10 +55,11 @@ impl Networkable for Name {
 
                 let chars = bytes.copy_to_bytes(len);
                 let s = std::str::from_utf8(&chars).or(Err(()))?;
-                name.push_str(s);
-                name.push('.');
+                parts.push(s.to_owned());
             }
         }
+
+        let name = parts.join(".");
 
         Ok(Self(name))
     }
