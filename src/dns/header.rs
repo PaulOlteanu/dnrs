@@ -33,6 +33,12 @@ impl Default for Flags {
     }
 }
 
+impl Flags {
+    pub fn new() -> Self {
+        Self(0)
+    }
+}
+
 impl Networkable for Flags {
     type Error = ();
 

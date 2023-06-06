@@ -3,7 +3,7 @@ use dnrs::dns::{Flags, Header, Networkable, Question, RecordType};
 pub fn create_query(domain_name: &str, record_type: RecordType) -> Result<Vec<u8>, ()> {
     let id = rand::random::<u16>();
 
-    let mut flags = Flags(0);
+    let mut flags = Flags::new();
     flags.set_rd(true);
 
     let header = Header {
