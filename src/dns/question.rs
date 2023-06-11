@@ -5,11 +5,11 @@ use num_traits::cast::{FromPrimitive, ToPrimitive};
 
 use super::{Name, Networkable, RecordType};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Question {
-    name: Name,
-    type_: RecordType,
-    class: u16,
+    pub name: Name,
+    pub type_: RecordType,
+    pub class: u16,
 }
 
 impl Question {

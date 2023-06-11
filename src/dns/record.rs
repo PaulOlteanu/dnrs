@@ -40,7 +40,7 @@ impl Networkable for Record {
         let ttl = bytes.get_u32();
         let rd_length = bytes.get_u16();
 
-        let data = RecordData::from_bytes(type_, bytes)?;
+        let data = RecordData::from_bytes(type_, rd_length, bytes)?;
 
         Ok(Self {
             name,

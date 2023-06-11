@@ -16,7 +16,7 @@ mod record;
 use num_derive::{FromPrimitive, ToPrimitive};
 pub use record::{Record, RecordData};
 
-#[derive(FromPrimitive, ToPrimitive, Debug)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Clone)]
 pub enum RecordType {
     A = 1,
     NS = 2,

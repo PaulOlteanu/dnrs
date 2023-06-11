@@ -12,10 +12,11 @@ pub enum RecordData {
     Mx { priority: u16, exchange: String },
     Txt(String),
     Aaaa([u8; 16]),
+    Other,
 }
 
 impl RecordData {
-    pub fn from_bytes(type_: u16, bytes: &mut Cursor<&[u8]>) -> Result<Self, ()> {
+    pub fn from_bytes(type_: u16, rd_length: u16, bytes: &mut Cursor<&[u8]>) -> Result<Self, ()> {
         match type_ {
             1 => Ok(Self::A(bytes.get_u32().to_be_bytes())),
 
@@ -35,7 +36,11 @@ impl RecordData {
                 result
             }
 
-            _ => unimplemented!(),
+            other => {
+                println!("Received record data of unknown type: {}", other);
+                bytes.advance(rd_length as usize);
+                Ok(Self::Other)
+            }
         }
     }
 
@@ -47,6 +52,7 @@ impl RecordData {
             Self::Mx { priority, exchange } => todo!(),
             Self::Txt(data) => data.as_bytes().to_vec(),
             Self::Aaaa(data) => data.to_vec(),
+            Self::Other => Vec::new(),
         }
     }
 }

@@ -4,7 +4,7 @@ use bytes::Buf;
 
 use super::Networkable;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Name(pub String);
 
 impl Name {
