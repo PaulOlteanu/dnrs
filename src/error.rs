@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub enum DnrsError {
-    Other(String)
+    Other(String),
 }
 
 impl From<std::io::Error> for DnrsError {

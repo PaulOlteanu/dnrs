@@ -43,7 +43,7 @@ impl Networkable for Question {
         let name = Name::from_bytes(bytes).unwrap();
 
         let type_ = bytes.get_u16();
-        let type_ = RecordType::from_u16(type_).unwrap();
+        let type_ = RecordType::from_u16(type_).ok_or(())?;
 
         let class = bytes.get_u16();
 

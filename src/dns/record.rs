@@ -1,17 +1,17 @@
 use std::io::Cursor;
 
 use bytes::Buf;
+use num_traits::FromPrimitive;
 
-use super::{Name, Networkable};
+use super::{Name, Networkable, RecordType};
 
 mod record_data;
 pub use record_data::RecordData;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Record {
     pub name: Name,
-    // TODO: Maybe get rid of this
-    pub type_: u16,
+    pub type_: RecordType,
     pub class: u16,
     pub ttl: u32,
     pub rd_length: u16,
@@ -24,7 +24,7 @@ impl Networkable for Record {
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
         ret.extend_from_slice(&self.name.to_bytes());
-        ret.extend_from_slice(&self.type_.to_be_bytes());
+        ret.extend_from_slice(&(self.type_ as u16).to_be_bytes());
         ret.extend_from_slice(&self.class.to_be_bytes());
         ret.extend_from_slice(&self.ttl.to_be_bytes());
         ret.extend_from_slice(&self.rd_length.to_be_bytes());
@@ -36,6 +36,7 @@ impl Networkable for Record {
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
         let name = Name::from_bytes(bytes).unwrap();
         let type_ = bytes.get_u16();
+        let type_ = FromPrimitive::from_u16(type_).ok_or(())?;
         let class = bytes.get_u16();
         let ttl = bytes.get_u32();
         let rd_length = bytes.get_u16();

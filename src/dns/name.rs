@@ -1,16 +1,23 @@
+use std::fmt::Display;
 use std::io::Cursor;
 
 use bytes::Buf;
 
 use super::Networkable;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Name(pub String);
 
 impl Name {
     // TODO: Checking on the length
     pub fn new(name: &str) -> Self {
         Self(name.to_owned())
+    }
+}
+
+impl Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 

@@ -16,24 +16,26 @@ mod record;
 use num_derive::{FromPrimitive, ToPrimitive};
 pub use record::{Record, RecordData};
 
-#[derive(FromPrimitive, ToPrimitive, Debug, Clone)]
+#[derive(FromPrimitive, ToPrimitive, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum RecordType {
     A = 1,
-    NS = 2,
-    MD = 3,
-    MF = 4,
-    CNAME = 5,
-    SOA = 6,
-    MB = 7,
-    MG = 8,
-    MR = 9,
-    NULL = 10,
-    WKS = 11,
-    PTR = 12,
-    HINFO = 13,
-    MINFO = 14,
-    MX = 15,
-    TXT = 16,
+    Ns = 2,
+    Md = 3,
+    Mf = 4,
+    Cname = 5,
+    Soa = 6,
+    Mb = 7,
+    Mg = 8,
+    Mr = 9,
+    Null = 10,
+    Wks = 11,
+    Ptr = 12,
+    Hinfo = 13,
+    Minfo = 14,
+    Mx = 15,
+    Txt = 16,
+    Aaaa = 28,
+    Opt = 41,
 }
 
 pub trait Networkable: Sized {
