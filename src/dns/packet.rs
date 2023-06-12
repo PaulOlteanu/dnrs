@@ -12,8 +12,11 @@ pub struct Packet {
 }
 
 impl Packet {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(header: Header) -> Self {
+        Self {
+            header,
+            ..Default::default()
+        }
     }
 }
 

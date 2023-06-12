@@ -34,7 +34,19 @@ impl Default for Flags {
 }
 
 impl Flags {
-    pub fn new() -> Self {
+    pub fn new(
+        qr: bool,
+        opcode: u8,
+        aa: bool,
+        tc: bool,
+        rd: bool,
+        ra: bool,
+        z: u8,
+        rcode: u8,
+    ) -> Self {
+        let mut flags = 0u16;
+        // TODO: This
+
         Self(0)
     }
 }
@@ -72,8 +84,22 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(
+        id: u16,
+        flags: Flags,
+        qd_count: u16,
+        an_count: u16,
+        ns_count: u16,
+        ar_count: u16,
+    ) -> Self {
+        Self {
+            id,
+            flags,
+            qd_count,
+            an_count,
+            ns_count,
+            ar_count,
+        }
     }
 }
 
