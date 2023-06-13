@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use bytes::Buf;
 
-use crate::{Name, Networkable, RecordType};
+use crate::{DnsError, Name, Networkable, RecordType};
 
 #[derive(Debug, Clone)]
 pub enum RecordData {
@@ -20,16 +20,13 @@ impl RecordData {
         type_: RecordType,
         rd_length: u16,
         bytes: &mut Cursor<&[u8]>,
-    ) -> Result<Self, ()> {
+    ) -> Result<Self, DnsError> {
         match type_ {
             RecordType::A => Ok(Self::A(bytes.get_u32().to_be_bytes())),
-
             RecordType::Ns => Ok(Self::Ns(Name::from_bytes(bytes).unwrap())),
             RecordType::Cname => Ok(Self::Cname(Name::from_bytes(bytes).unwrap())),
-
-            RecordType::Mx => todo!(),
-
-            RecordType::Txt => todo!(),
+            RecordType::Mx => Err(DnsError::NotImplemented),
+            RecordType::Txt => Err(DnsError::NotImplemented),
 
             RecordType::Aaaa => {
                 let result = Ok(Self::Aaaa(bytes.take(16).chunk().try_into().unwrap()));

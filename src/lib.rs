@@ -22,9 +22,7 @@ mod record_type;
 pub use record_type::RecordType;
 
 pub trait Networkable: Sized {
-    type Error;
-
     fn to_bytes(&self) -> Vec<u8>;
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error>;
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError>;
 }

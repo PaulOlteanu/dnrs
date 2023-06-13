@@ -4,7 +4,7 @@ use bytes::Buf;
 use num_traits::FromPrimitive;
 
 use super::{Name, Networkable};
-use crate::RecordType;
+use crate::{DnsError, RecordType};
 
 mod record_data;
 pub use record_data::RecordData;
@@ -20,8 +20,6 @@ pub struct ResourceRecord {
 }
 
 impl Networkable for ResourceRecord {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
         ret.extend_from_slice(&self.name.to_bytes());
@@ -34,10 +32,10 @@ impl Networkable for ResourceRecord {
         ret
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let name = Name::from_bytes(bytes).unwrap();
         let type_ = bytes.get_u16();
-        let type_ = FromPrimitive::from_u16(type_).ok_or(())?;
+        let type_ = FromPrimitive::from_u16(type_).ok_or(DnsError::FormatError)?;
         let class = bytes.get_u16();
         let ttl = bytes.get_u32();
         let rd_length = bytes.get_u16();

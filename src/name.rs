@@ -3,6 +3,8 @@ use std::io::Cursor;
 
 use bytes::Buf;
 
+use crate::DnsError;
+
 use super::Networkable;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -22,8 +24,6 @@ impl Display for Name {
 }
 
 impl Networkable for Name {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
 
@@ -37,7 +37,7 @@ impl Networkable for Name {
         ret
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let mut parts: Vec<String> = Vec::new();
         loop {
             let len = bytes.get_u8() as usize;
@@ -57,11 +57,11 @@ impl Networkable for Name {
             } else {
                 // Uncompressed
                 if bytes.remaining() < len {
-                    return Err(());
+                    return Err(DnsError::FormatError);
                 }
 
                 let chars = bytes.copy_to_bytes(len);
-                let s = std::str::from_utf8(&chars).or(Err(()))?;
+                let s = std::str::from_utf8(&chars).or(Err(DnsError::FormatError))?;
                 parts.push(s.to_owned());
             }
         }

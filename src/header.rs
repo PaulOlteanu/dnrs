@@ -3,6 +3,8 @@ use std::io::Cursor;
 use bitfield::bitfield;
 use bytes::Buf;
 
+use crate::DnsError;
+
 use super::Networkable;
 
 bitfield! {
@@ -29,15 +31,13 @@ bitfield! {
 }
 
 impl Networkable for Flags {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         self.0.to_be_bytes().to_vec()
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         if bytes.remaining() < 2 {
-            return Err(());
+            return Err(DnsError::FormatError);
         }
 
         let flags = bytes.get_u16();
@@ -67,8 +67,6 @@ impl Header {
 }
 
 impl Networkable for Header {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::with_capacity(12);
         ret.extend_from_slice(&self.id.to_be_bytes());
@@ -81,9 +79,9 @@ impl Networkable for Header {
         ret
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         if bytes.remaining() < 12 {
-            return Err(());
+            return Err(DnsError::FormatError);
         }
 
         let id = bytes.get_u16();

@@ -4,7 +4,7 @@ use bytes::Buf;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 
 use super::{Name, Networkable};
-use crate::RecordType;
+use crate::{RecordType, DnsError};
 
 #[derive(Debug, Clone)]
 pub struct Question {
@@ -14,9 +14,9 @@ pub struct Question {
 }
 
 impl Question {
-    pub fn new(name: &str, type_: RecordType) -> Result<Self, ()> {
+    pub fn new(name: &str, type_: RecordType) -> Result<Self, DnsError> {
         if name.len() > 253 {
-            return Err(());
+            return Err(DnsError::FormatError);
         }
 
         Ok(Self {
@@ -28,8 +28,6 @@ impl Question {
 }
 
 impl Networkable for Question {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
 
@@ -40,11 +38,11 @@ impl Networkable for Question {
         ret
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let name = Name::from_bytes(bytes).unwrap();
 
         let type_ = bytes.get_u16();
-        let type_ = RecordType::from_u16(type_).ok_or(())?;
+        let type_ = RecordType::from_u16(type_).ok_or(DnsError::FormatError)?;
 
         let class = bytes.get_u16();
 

@@ -54,6 +54,7 @@ pub async fn run(ip: &str, port: u16) {
 
     let sock = Arc::new(sock);
 
+    // TODO: Spawn 2 tasks for tcp and udp
     loop {
         let sock = Arc::clone(&sock);
         let cache = Arc::clone(&cache);
@@ -123,7 +124,10 @@ async fn handle_request(
         // Request
         let sub_sock = UdpSocket::bind(("0.0.0.0", 0))
             .await
-            .expect("Couldn't couldn't create socket for request");
+            .or(Err(DnsError::ServerFailure(
+                "Couldn't create socket to begin resolution".to_owned(),
+            )))
+            .unwrap();
 
         let result = resolve(&sub_sock, question.clone()).await;
 
@@ -156,7 +160,7 @@ async fn handle_request(
 }
 
 #[async_recursion]
-async fn resolve(sock: &UdpSocket, question: Question) -> Result<ResourceRecord, ()> {
+async fn resolve(sock: &UdpSocket, question: Question) -> Result<ResourceRecord, DnsError> {
     let flags = Flags::default();
     let id = rand::random::<u16>();
     let header = Header::new(id, flags);
@@ -171,45 +175,50 @@ async fn resolve(sock: &UdpSocket, question: Question) -> Result<ResourceRecord,
             .await
             .unwrap();
 
-        let response_len = sock.recv(&mut buf).await.unwrap();
+        // TODO: Need to do validation of this message
+        let response_len = sock.recv(&mut buf).await?;
         let mut cursor = Cursor::new(&buf[..response_len]);
-        let mut packet = Message::from_bytes(&mut cursor).unwrap();
+        let mut message = Message::from_bytes(&mut cursor).unwrap();
 
-        if packet.header.num_answers == 1 {
-            return Ok(packet.answers.remove(0));
+        if message.header.num_answers == 1 {
+            return Ok(message.answers.remove(0));
         }
 
-        if packet.header.num_additionals > 0 {
-            if let Some(additional) = packet
+        if message.header.num_additionals > 0 {
+            if let Some(additional) = message
                 .additionals
                 .iter()
                 .find(|p| matches!(p.data, RecordData::A(_)))
             {
                 let RecordData::A(data) = additional.data else {
-                    return Err(())
+                    return Err(DnsError::ServerFailure("Don't know how to continue".to_owned()))
                 };
                 nameserver = Ipv4Addr::from(data);
                 continue;
             }
         }
 
-        if packet.header.num_authorities > 0 {
-            let authority = packet.authorities.first().ok_or(())?;
+        if message.header.num_authorities > 0 {
+            let authority = message.authorities.first().ok_or(DnsError::ServerFailure(
+                "Bad response from authority".to_owned(),
+            ))?;
             let RecordData::Ns(ref data) = authority.data else {
-                return Err(())
+                return Err(DnsError::ServerFailure("Non NS in authorities".to_owned()))
             };
 
             let question = Question::new(&data.0, RecordType::A)?;
 
             let temp = resolve(sock, question).await?;
             let RecordData::A(data) = temp.data else {
-                return Err(())
+                return Err(DnsError::ServerFailure("Failed to find authority".to_owned()))
             };
 
             nameserver = Ipv4Addr::from(data);
             continue;
         }
 
-        return Err(());
+        return Err(DnsError::ServerFailure(
+            "This should be unreachable".to_owned(),
+        ));
     }
 }

@@ -1,5 +1,7 @@
 use std::io::Cursor;
 
+use crate::DnsError;
+
 use super::{Header, Networkable, Question, ResourceRecord};
 
 #[derive(Debug, Default)]
@@ -41,8 +43,6 @@ impl Message {
 }
 
 impl Networkable for Message {
-    type Error = ();
-
     fn to_bytes(&self) -> Vec<u8> {
         let mut response = Vec::new();
         response.extend_from_slice(&self.header.to_bytes());
@@ -64,7 +64,7 @@ impl Networkable for Message {
         response
     }
 
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, Self::Error> {
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let header = Header::from_bytes(bytes).unwrap();
 
         let mut questions = Vec::new();
