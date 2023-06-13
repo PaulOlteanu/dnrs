@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
 use dnrs::dns::{
-    Flags, Header, Name, Networkable, Packet, Question, Record, RecordData, RecordType,
+    Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType, ResourceRecord,
 };
 use tokio::net::UdpSocket;
 
@@ -25,8 +25,8 @@ impl CacheKey {
     }
 }
 
-impl From<Record> for CacheKey {
-    fn from(value: Record) -> Self {
+impl From<ResourceRecord> for CacheKey {
+    fn from(value: ResourceRecord) -> Self {
         Self {
             class: value.class,
             type_: value.type_,
@@ -35,8 +35,8 @@ impl From<Record> for CacheKey {
     }
 }
 
-impl From<&Record> for CacheKey {
-    fn from(value: &Record) -> Self {
+impl From<&ResourceRecord> for CacheKey {
+    fn from(value: &ResourceRecord) -> Self {
         Self {
             class: value.class,
             type_: value.type_,
@@ -50,7 +50,7 @@ pub async fn run(ip: &str, port: u16) -> Result<(), DnrsError> {
         .await
         .expect("Couldn't run server");
 
-    let cache = Arc::new(Mutex::new(HashMap::<CacheKey, Record>::new()));
+    let cache = Arc::new(Mutex::new(HashMap::<CacheKey, ResourceRecord>::new()));
 
     let sock = Arc::new(sock);
 
@@ -65,25 +65,25 @@ pub async fn run(ip: &str, port: u16) -> Result<(), DnrsError> {
 }
 
 async fn handle_request(
-    cache: Arc<Mutex<HashMap<CacheKey, Record>>>,
+    cache: Arc<Mutex<HashMap<CacheKey, ResourceRecord>>>,
     sock: Arc<UdpSocket>,
     addr: SocketAddr,
     data: &[u8],
 ) {
-    let mut request = Packet::from_bytes(&mut Cursor::new(data)).unwrap();
+    let mut request = Message::from_bytes(&mut Cursor::new(data)).unwrap();
 
     if request.header.flags.qr() {
         println!("Error");
     }
 
     // Validate request
-    if request.header.qd_count != 1 || request.header.flags.opcode() != 0 {
+    if request.header.num_questions != 1 || request.header.flags.opcode() != 0 {
         println!("Received unimplemented request");
         let mut flags = set_response_flags(request.header.flags);
         flags.set_rcode(4);
 
         let header = Header::new(request.header.id, flags);
-        let response = Packet::new(header);
+        let response = Message::new(header);
         let buf = response.to_bytes();
         sock.send_to(&buf, addr).await.ok();
     }
@@ -101,11 +101,9 @@ async fn handle_request(
         let flags = set_response_flags(request.header.flags);
         let header = Header::new(request.header.id, flags);
 
-        let mut response = Packet::new(header);
-        response.header.qd_count = 1;
-        response.header.an_count = 1;
-        response.questions.push(question);
-        response.answers.push(record.clone());
+        let mut response = Message::new(header);
+        response.add_question(question);
+        response.add_answer(record.clone());
 
         println!(
             "Responding from cache for {:?}: {}",
@@ -131,11 +129,9 @@ async fn handle_request(
             let flags = set_response_flags(request.header.flags);
             let header = Header::new(request.header.id, flags);
 
-            let mut response = Packet::new(header);
-            response.header.qd_count = 1;
-            response.header.an_count = 1;
-            response.questions.push(question);
-            response.answers.push(record.clone());
+            let mut response = Message::new(header);
+            response.add_question(question);
+            response.add_answer(record.clone());
 
             let response = response.to_bytes();
             sock.send_to(&response, addr).await.ok();
@@ -145,8 +141,8 @@ async fn handle_request(
 
             let header = Header::new(request.header.id, flags);
 
-            let mut response = Packet::new(header);
-            response.header.qd_count = 1;
+            let mut response = Message::new(header);
+            response.add_question(question);
 
             let err = response.to_bytes();
             sock.send_to(&err, addr).await.ok();
@@ -155,11 +151,11 @@ async fn handle_request(
 }
 
 #[async_recursion]
-async fn resolve(sock: &UdpSocket, question: Question) -> Result<Record, ()> {
+async fn resolve(sock: &UdpSocket, question: Question) -> Result<ResourceRecord, ()> {
     let flags = Flags::default();
     let id = rand::random::<u16>();
     let header = Header::new(id, flags);
-    let mut query = Packet::new(header);
+    let mut query = Message::new(header);
     query.questions.push(question);
 
     let mut nameserver = Ipv4Addr::new(198, 41, 0, 4);
@@ -172,13 +168,13 @@ async fn resolve(sock: &UdpSocket, question: Question) -> Result<Record, ()> {
 
         let response_len = sock.recv(&mut buf).await.unwrap();
         let mut cursor = Cursor::new(&buf[..response_len]);
-        let mut packet = Packet::from_bytes(&mut cursor).unwrap();
+        let mut packet = Message::from_bytes(&mut cursor).unwrap();
 
-        if packet.header.an_count == 1 {
+        if packet.header.num_answers == 1 {
             return Ok(packet.answers.remove(0));
         }
 
-        if packet.header.ar_count > 0 {
+        if packet.header.num_additionals > 0 {
             if let Some(additional) = packet
                 .additionals
                 .iter()
@@ -192,7 +188,7 @@ async fn resolve(sock: &UdpSocket, question: Question) -> Result<Record, ()> {
             }
         }
 
-        if packet.header.ns_count > 0 {
+        if packet.header.num_authorities > 0 {
             let authority = packet.authorities.first().ok_or(())?;
             let RecordData::Ns(ref data) = authority.data else {
                 return Err(())

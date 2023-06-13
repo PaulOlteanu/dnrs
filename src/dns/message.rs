@@ -1,26 +1,46 @@
 use std::io::Cursor;
 
-use super::{Header, Networkable, Question, Record};
+use super::{Header, Networkable, Question, ResourceRecord};
 
 #[derive(Debug, Default)]
-pub struct Packet {
+pub struct Message {
     pub header: Header,
     pub questions: Vec<Question>,
-    pub answers: Vec<Record>,
-    pub authorities: Vec<Record>,
-    pub additionals: Vec<Record>,
+    pub answers: Vec<ResourceRecord>,
+    pub authorities: Vec<ResourceRecord>,
+    pub additionals: Vec<ResourceRecord>,
 }
 
-impl Packet {
+impl Message {
     pub fn new(header: Header) -> Self {
         Self {
             header,
             ..Default::default()
         }
     }
+
+    pub fn add_question(&mut self, question: Question) {
+        self.header.num_questions += 1;
+        self.questions.push(question)
+    }
+
+    pub fn add_answer(&mut self, answer: ResourceRecord) {
+        self.header.num_answers += 1;
+        self.answers.push(answer)
+    }
+
+    pub fn add_authority(&mut self, answer: ResourceRecord) {
+        self.header.num_authorities += 1;
+        self.authorities.push(answer)
+    }
+
+    pub fn add_additional(&mut self, answer: ResourceRecord) {
+        self.header.num_additionals += 1;
+        self.additionals.push(answer)
+    }
 }
 
-impl Networkable for Packet {
+impl Networkable for Message {
     type Error = ();
 
     fn to_bytes(&self) -> Vec<u8> {
@@ -48,23 +68,23 @@ impl Networkable for Packet {
         let header = Header::from_bytes(bytes).unwrap();
 
         let mut questions = Vec::new();
-        for _ in 0..header.qd_count {
+        for _ in 0..header.num_questions {
             questions.push(Question::from_bytes(bytes).unwrap());
         }
 
         let mut answers = Vec::new();
-        for _ in 0..header.an_count {
-            answers.push(Record::from_bytes(bytes).unwrap());
+        for _ in 0..header.num_answers {
+            answers.push(ResourceRecord::from_bytes(bytes).unwrap());
         }
 
         let mut authorities = Vec::new();
-        for _ in 0..header.ns_count {
-            authorities.push(Record::from_bytes(bytes).unwrap());
+        for _ in 0..header.num_authorities {
+            authorities.push(ResourceRecord::from_bytes(bytes).unwrap());
         }
 
         let mut additionals = Vec::new();
-        for _ in 0..header.ar_count {
-            additionals.push(Record::from_bytes(bytes).unwrap());
+        for _ in 0..header.num_additionals {
+            additionals.push(ResourceRecord::from_bytes(bytes).unwrap());
         }
 
         Ok(Self {

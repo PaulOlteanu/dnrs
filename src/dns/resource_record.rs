@@ -9,7 +9,7 @@ mod record_data;
 pub use record_data::RecordData;
 
 #[derive(Debug, Clone)]
-pub struct Record {
+pub struct ResourceRecord {
     pub name: Name,
     pub type_: RecordType,
     pub class: u16,
@@ -18,7 +18,7 @@ pub struct Record {
     pub data: RecordData,
 }
 
-impl Networkable for Record {
+impl Networkable for ResourceRecord {
     type Error = ();
 
     fn to_bytes(&self) -> Vec<u8> {

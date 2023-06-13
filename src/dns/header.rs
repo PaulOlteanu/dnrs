@@ -28,24 +28,6 @@ bitfield! {
     pub rcode, set_rcode: 3, 0;
 }
 
-impl Flags {
-    pub fn new(
-        qr: bool,
-        opcode: u8,
-        aa: bool,
-        tc: bool,
-        rd: bool,
-        ra: bool,
-        z: u8,
-        rcode: u8,
-    ) -> Self {
-        let mut flags = 0u16;
-        // TODO: This
-
-        Self(0)
-    }
-}
-
 impl Networkable for Flags {
     type Error = ();
 
@@ -68,14 +50,10 @@ impl Networkable for Flags {
 pub struct Header {
     pub id: u16,
     pub flags: Flags,
-    // num questions
-    pub qd_count: u16,
-    // num answers
-    pub an_count: u16,
-    // num authorities
-    pub ns_count: u16,
-    // num additionals
-    pub ar_count: u16,
+    pub num_questions: u16,
+    pub num_answers: u16,
+    pub num_authorities: u16,
+    pub num_additionals: u16,
 }
 
 impl Header {
@@ -95,10 +73,10 @@ impl Networkable for Header {
         let mut ret = Vec::with_capacity(12);
         ret.extend_from_slice(&self.id.to_be_bytes());
         ret.extend_from_slice(&self.flags.to_bytes());
-        ret.extend_from_slice(&self.qd_count.to_be_bytes());
-        ret.extend_from_slice(&self.an_count.to_be_bytes());
-        ret.extend_from_slice(&self.ns_count.to_be_bytes());
-        ret.extend_from_slice(&self.ar_count.to_be_bytes());
+        ret.extend_from_slice(&self.num_questions.to_be_bytes());
+        ret.extend_from_slice(&self.num_answers.to_be_bytes());
+        ret.extend_from_slice(&self.num_authorities.to_be_bytes());
+        ret.extend_from_slice(&self.num_additionals.to_be_bytes());
 
         ret
     }
@@ -118,10 +96,10 @@ impl Networkable for Header {
         Ok(Self {
             id,
             flags,
-            qd_count,
-            an_count,
-            ns_count,
-            ar_count,
+            num_questions: qd_count,
+            num_answers: an_count,
+            num_authorities: ns_count,
+            num_additionals: ar_count,
         })
     }
 }

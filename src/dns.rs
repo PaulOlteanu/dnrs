@@ -6,15 +6,15 @@ pub use header::{Flags, Header};
 mod name;
 pub use name::Name;
 
-mod packet;
-pub use packet::Packet;
+mod message;
+pub use message::Message;
 
 mod question;
 pub use question::Question;
 
-mod record;
+mod resource_record;
 use num_derive::{FromPrimitive, ToPrimitive};
-pub use record::{Record, RecordData};
+pub use resource_record::{RecordData, ResourceRecord};
 
 #[derive(FromPrimitive, ToPrimitive, Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum RecordType {

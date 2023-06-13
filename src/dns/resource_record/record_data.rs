@@ -27,10 +27,7 @@ impl RecordData {
             RecordType::Ns => Ok(Self::Ns(Name::from_bytes(bytes).unwrap())),
             RecordType::Cname => Ok(Self::Cname(Name::from_bytes(bytes).unwrap())),
 
-            RecordType::Mx => {
-                // Mx
-                todo!()
-            }
+            RecordType::Mx => todo!(),
 
             RecordType::Txt => todo!(),
 
