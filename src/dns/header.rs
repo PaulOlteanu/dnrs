@@ -6,31 +6,26 @@ use bytes::Buf;
 use super::Networkable;
 
 bitfield! {
-  pub struct Flags(u16);
-  impl Debug;
-  u8;
-  // query or response
-  pub qr, set_qr: 15;
-  // query type
-  pub opcode, set_opcode: 14, 11;
-  // authoritative answerer
-  pub aa, set_aa: 10;
-  // truncation
-  pub tc, set_tc: 9;
-  // recursion desired
-  pub rd, set_rd: 8;
-  // recursion available
-  pub ra, set_ra: 7;
-  // reserved
-  pub z, set_z: 6, 4;
-  // response code
-  pub rcode, set_rcode: 3, 0;
-}
-
-impl Default for Flags {
-    fn default() -> Self {
-        Self(0)
-    }
+    #[derive(Clone, Copy, Default)]
+    pub struct Flags(u16);
+    impl Debug;
+    u8;
+    // query or response
+    pub qr, set_qr: 15;
+    // query type
+    pub opcode, set_opcode: 14, 11;
+    // authoritative answerer
+    pub aa, set_aa: 10;
+    // truncation
+    pub tc, set_tc: 9;
+    // recursion desired
+    pub rd, set_rd: 8;
+    // recursion available
+    pub ra, set_ra: 7;
+    // reserved
+    pub z, set_z: 6, 4;
+    // response code
+    pub rcode, set_rcode: 3, 0;
 }
 
 impl Flags {
@@ -84,21 +79,11 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn new(
-        id: u16,
-        flags: Flags,
-        qd_count: u16,
-        an_count: u16,
-        ns_count: u16,
-        ar_count: u16,
-    ) -> Self {
+    pub fn new(id: u16, flags: Flags) -> Self {
         Self {
             id,
             flags,
-            qd_count,
-            an_count,
-            ns_count,
-            ar_count,
+            ..Default::default()
         }
     }
 }

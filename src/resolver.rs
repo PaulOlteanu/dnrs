@@ -4,10 +4,13 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
-use dnrs::dns::{Name, Networkable, Packet, Question, Record, RecordData, RecordType};
+use dnrs::dns::{
+    Flags, Header, Name, Networkable, Packet, Question, Record, RecordData, RecordType,
+};
 use tokio::net::UdpSocket;
 
 use crate::error::DnrsError;
+use crate::util::set_response_flags;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct CacheKey {
@@ -67,23 +70,25 @@ async fn handle_request(
     addr: SocketAddr,
     data: &[u8],
 ) {
-    let mut packet = Packet::from_bytes(&mut Cursor::new(data)).unwrap();
+    let mut request = Packet::from_bytes(&mut Cursor::new(data)).unwrap();
 
-    if packet.header.flags.qr() {
+    if request.header.flags.qr() {
         println!("Error");
     }
 
     // Validate request
-    if packet.header.qd_count != 1 || packet.header.flags.opcode() != 0 {
+    if request.header.qd_count != 1 || request.header.flags.opcode() != 0 {
         println!("Received unimplemented request");
-        let mut response = Packet::new();
-        response.header.flags.set_qr(true);
-        response.header.flags.set_rcode(4);
+        let mut flags = set_response_flags(request.header.flags);
+        flags.set_rcode(4);
+
+        let header = Header::new(request.header.id, flags);
+        let response = Packet::new(header);
         let buf = response.to_bytes();
-        let _ = sock.send_to(&buf, addr).await;
+        sock.send_to(&buf, addr).await.ok();
     }
 
-    let question = packet.questions.remove(0);
+    let question = request.questions.remove(0);
 
     let key = CacheKey::new(question.class, question.type_, question.name.clone());
 
@@ -93,13 +98,12 @@ async fn handle_request(
     };
 
     if let Some(record) = cached {
-        let mut response = Packet::new();
-        response.header.id = packet.header.id;
+        let flags = set_response_flags(request.header.flags);
+        let header = Header::new(request.header.id, flags);
+
+        let mut response = Packet::new(header);
         response.header.qd_count = 1;
         response.header.an_count = 1;
-        response.header.flags.set_aa(false);
-        response.header.flags.set_ra(true);
-        response.header.flags.set_qr(true);
         response.questions.push(question);
         response.answers.push(record.clone());
 
@@ -124,28 +128,27 @@ async fn handle_request(
                 cache.insert(CacheKey::from(&record), record.clone());
             }
 
-            let mut response = Packet::new();
-            response.header.id = packet.header.id;
+            let flags = set_response_flags(request.header.flags);
+            let header = Header::new(request.header.id, flags);
+
+            let mut response = Packet::new(header);
             response.header.qd_count = 1;
             response.header.an_count = 1;
-            response.header.flags.set_aa(false);
-            response.header.flags.set_ra(true);
-            response.header.flags.set_qr(true);
             response.questions.push(question);
             response.answers.push(record.clone());
 
             let response = response.to_bytes();
             sock.send_to(&response, addr).await.ok();
         } else {
-            let mut err = Packet::new();
-            err.header.id = packet.header.id;
-            err.header.qd_count = 1;
-            err.header.flags.set_aa(false);
-            err.header.flags.set_ra(true);
-            err.header.flags.set_qr(true);
-            err.header.flags.set_rcode(2);
+            let mut flags = set_response_flags(request.header.flags);
+            flags.set_rcode(2);
 
-            let err = err.to_bytes();
+            let header = Header::new(request.header.id, flags);
+
+            let mut response = Packet::new(header);
+            response.header.qd_count = 1;
+
+            let err = response.to_bytes();
             sock.send_to(&err, addr).await.ok();
         }
     }
@@ -153,8 +156,10 @@ async fn handle_request(
 
 #[async_recursion]
 async fn resolve(sock: &UdpSocket, question: Question) -> Result<Record, ()> {
-    let mut query = Packet::new();
-    query.header.qd_count = 1;
+    let flags = Flags::default();
+    let id = rand::random::<u16>();
+    let header = Header::new(id, flags);
+    let mut query = Packet::new(header);
     query.questions.push(question);
 
     let mut nameserver = Ipv4Addr::new(198, 41, 0, 4);
