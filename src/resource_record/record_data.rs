@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use bytes::Buf;
 
-use crate::dns::{Name, Networkable, RecordType};
+use crate::{Name, Networkable, RecordType};
 
 #[derive(Debug, Clone)]
 pub enum RecordData {

@@ -1,4 +1,4 @@
-use dnrs::dns::Flags;
+use dnrs::Flags;
 
 pub fn set_response_flags(mut flags: Flags) -> Flags {
     flags.set_qr(true);

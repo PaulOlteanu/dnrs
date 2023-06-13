@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use dnrs::dns::{Flags, Header, Message, Networkable, Question};
+use dnrs::{Flags, Header, Message, Networkable, Question};
 use tokio::net::UdpSocket;
 
 mod resolver;
@@ -17,7 +17,7 @@ async fn query_resolver() {
     flags.set_rd(true);
     let header = Header::new(323, flags);
     let mut message = Message::new(header);
-    let question = Question::new("google.com", dnrs::dns::RecordType::A).unwrap();
+    let question = Question::new("google.com", dnrs::RecordType::A).unwrap();
     message.add_question(question);
 
     let sock = UdpSocket::bind(("0.0.0.0", 3234)).await.unwrap();

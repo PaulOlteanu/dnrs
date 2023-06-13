@@ -3,7 +3,8 @@ use std::io::Cursor;
 use bytes::Buf;
 use num_traits::FromPrimitive;
 
-use super::{Name, Networkable, RecordType};
+use super::{Name, Networkable};
+use crate::RecordType;
 
 mod record_data;
 pub use record_data::RecordData;

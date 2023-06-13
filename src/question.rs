@@ -3,7 +3,8 @@ use std::io::Cursor;
 use bytes::Buf;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 
-use super::{Name, Networkable, RecordType};
+use super::{Name, Networkable};
+use crate::RecordType;
 
 #[derive(Debug, Clone)]
 pub struct Question {
