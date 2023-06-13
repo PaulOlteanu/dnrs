@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
 use dnrs::dns::{
-    Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType, ResourceRecord,
+    DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
+    ResourceRecord,
 };
 use tokio::net::UdpSocket;
 
-use crate::error::DnrsError;
 use crate::util::set_response_flags;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -45,7 +45,7 @@ impl From<&ResourceRecord> for CacheKey {
     }
 }
 
-pub async fn run(ip: &str, port: u16) -> Result<(), DnrsError> {
+pub async fn run(ip: &str, port: u16) {
     let sock = UdpSocket::bind((ip, port))
         .await
         .expect("Couldn't run server");
@@ -57,23 +57,29 @@ pub async fn run(ip: &str, port: u16) -> Result<(), DnrsError> {
     loop {
         let sock = Arc::clone(&sock);
         let cache = Arc::clone(&cache);
-        let mut buf = [0; 1024];
-        let (len, addr) = sock.recv_from(&mut buf).await?;
 
-        tokio::spawn(async move { handle_request(cache, sock, addr, &buf[0..len]).await });
+        // http://www.dnsflagday.net/2020/
+        let mut buf = [0; 1232];
+        // TODO: Handle if this errors
+        let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
+
+        tokio::spawn(async move {
+            if let Some(response) = handle_request(cache, &buf[0..len]).await {
+                sock.send_to(&response.to_bytes(), addr).await.ok();
+            }
+        });
     }
 }
 
 async fn handle_request(
     cache: Arc<Mutex<HashMap<CacheKey, ResourceRecord>>>,
-    sock: Arc<UdpSocket>,
-    addr: SocketAddr,
     data: &[u8],
-) {
+) -> Option<Message> {
     let mut request = Message::from_bytes(&mut Cursor::new(data)).unwrap();
 
-    if request.header.flags.qr() {
-        println!("Error");
+    if request.header.flags.qr() || request.header.flags.z() != 0 {
+        println!("Discarding request");
+        return None;
     }
 
     // Validate request
@@ -83,9 +89,7 @@ async fn handle_request(
         flags.set_rcode(4);
 
         let header = Header::new(request.header.id, flags);
-        let response = Message::new(header);
-        let buf = response.to_bytes();
-        sock.send_to(&buf, addr).await.ok();
+        return Some(Message::new(header));
     }
 
     let question = request.questions.remove(0);
@@ -110,16 +114,19 @@ async fn handle_request(
             record.type_, record.name
         );
 
-        let response = response.to_bytes();
-
-        sock.send_to(&response, addr).await.ok();
+        Some(response)
     } else {
+        if !request.header.flags.rd() {
+            // TODO: Return no records
+        }
+
         // Request
         let sub_sock = UdpSocket::bind(("0.0.0.0", 0))
             .await
             .expect("Couldn't couldn't create socket for request");
 
         let result = resolve(&sub_sock, question.clone()).await;
+
         if let Ok(record) = result {
             {
                 let mut cache = cache.lock().unwrap();
@@ -133,8 +140,7 @@ async fn handle_request(
             response.add_question(question);
             response.add_answer(record.clone());
 
-            let response = response.to_bytes();
-            sock.send_to(&response, addr).await.ok();
+            Some(response)
         } else {
             let mut flags = set_response_flags(request.header.flags);
             flags.set_rcode(2);
@@ -144,8 +150,7 @@ async fn handle_request(
             let mut response = Message::new(header);
             response.add_question(question);
 
-            let err = response.to_bytes();
-            sock.send_to(&err, addr).await.ok();
+            Some(response)
         }
     }
 }

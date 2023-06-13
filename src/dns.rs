@@ -1,5 +1,8 @@
 use std::io::Cursor;
 
+mod error;
+pub use error::DnsError;
+
 mod header;
 pub use header::{Flags, Header};
 
