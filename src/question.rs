@@ -4,7 +4,7 @@ use bytes::Buf;
 use num_traits::cast::{FromPrimitive, ToPrimitive};
 
 use super::{Name, Networkable};
-use crate::{RecordType, DnsError};
+use crate::{DnsError, RecordType};
 
 #[derive(Debug, Clone)]
 pub struct Question {

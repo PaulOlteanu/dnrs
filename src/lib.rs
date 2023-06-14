@@ -1,5 +1,7 @@
 use std::io::Cursor;
 
+pub mod cache;
+
 mod error;
 pub use error::DnsError;
 
