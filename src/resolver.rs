@@ -197,7 +197,7 @@ pub async fn resolve(
                     return Err(DnsError::ServerFailure("Don't know how to continue".to_owned()))
                 };
 
-                ns_queue.queue.push(vec![IpAddr::V4(Ipv4Addr::from(data))]);
+                ns_queue.queue.push(vec![IpAddr::V4(data)]);
                 continue;
             }
         }
@@ -217,7 +217,7 @@ pub async fn resolve(
                 return Err(DnsError::ServerFailure("Failed to find authority".to_owned()))
             };
 
-            ns_queue.queue.push(vec![IpAddr::V4(Ipv4Addr::from(data))]);
+            ns_queue.queue.push(vec![IpAddr::V4(data)]);
             continue;
         }
 
