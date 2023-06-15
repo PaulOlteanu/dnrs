@@ -13,60 +13,58 @@ use crate::DnsError;
 // TODO: Need to implement hash, partialeq, and eq on my own
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Name {
-    /// This is ordered from right to left in a domain name
-    /// For example: www.example.com becomes [com, example, www]
-    pub name: Vec<String>,
-    /// This is an index into name
-    /// So level 0 would be com and level 2 would be www.example.com
-    pub level: usize,
+    /// This is the domain name
+    /// E.g. www.google.com
+    pub name: String,
+
+    /// This is a vector of all the indices where a label starts
+    /// E.g. www.google.com would have a split_indices of [0, 4, 11]
+    pub split_indices: Vec<usize>,
 }
 
 impl Name {
     // TODO: Checking on the length
     pub fn new(name: &str) -> Self {
-        let name: Vec<String> = name.split('.').rev().map(|l| l.to_owned()).collect();
-        let level = name.len() - 1;
-        Self { name, level }
-    }
-
-    pub fn get_current_subdomain(&self) -> String {
-        self.name[0..=self.level].iter().rev().cloned().join(".")
-    }
-
-    pub fn get_full(&self) -> String {
-        self.name.iter().rev().cloned().join(".")
-    }
-
-    pub fn increase_level(&mut self) {
-        if self.level < self.name.len() - 1 {
-            self.level += 1;
-        }
-    }
-
-    pub fn decrease_level(&mut self) {
-        if self.level > 0 {
-            self.level -= 1;
-        }
-    }
-
-    // Get larger and larger subdomains
-    // Eg www.google.com -> [com, google.com, www.google.com]
-    pub fn iter_subdomains(&self) -> Vec<String> {
-        self.name.iter().fold(Vec::new(), |mut acc, label| {
-            if let Some(prev) = acc.last() {
-                acc.push(format!("{}.{}", label, prev));
-                acc
+        let mut split_indices = vec![0];
+        split_indices.extend(name.match_indices('.').filter_map(|(i, _)| {
+            if i == name.len() - 1 {
+                None
             } else {
-                acc.push(label.to_owned());
-                acc
+                Some(i + 1)
             }
-        })
+        }));
+
+        Self {
+            name: name.to_owned(),
+            split_indices,
+        }
+    }
+
+    // TODO: Rename this
+    /// Get larger and larger subdomains
+    /// Eg www.google.com -> [com, google.com, www.google.com]
+    pub fn iter_subdomains(&self) -> impl Iterator<Item = String> + '_ {
+        self.split_indices
+            .iter()
+            .rev()
+            .map(|i| self.name[*i..].to_owned())
+    }
+
+    pub fn matching_level(&self, other: &Name) -> usize {
+        let a = self.iter_subdomains();
+        let b = other.iter_subdomains();
+
+        a.zip(b)
+            .enumerate()
+            .map_while(|(i, (a, b))| if a == b { Some(i + 1) } else { None })
+            .last()
+            .unwrap_or(0)
     }
 }
 
 impl Display for Name {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.get_full())
+        f.write_str(&self.name)
     }
 }
 
@@ -74,7 +72,7 @@ impl Networkable for Name {
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
 
-        for section in self.name.iter().rev() {
+        for section in self.name.split('.') {
             ret.push(section.len() as u8);
             ret.extend_from_slice(section.as_bytes());
         }
@@ -99,7 +97,7 @@ impl Networkable for Name {
                 bytes.set_position(pointer as u64);
                 let n = Self::from_bytes(bytes)?;
                 bytes.set_position(position);
-                parts.push(n.get_full());
+                parts.push(n.name);
                 break;
             } else {
                 // Uncompressed
@@ -126,28 +124,20 @@ mod tests {
     #[test]
     fn creates_successfully() {
         let name = Name::new("www.google.com");
-
-        assert!(name.level == 2);
-        assert!(name.get_full() == "www.google.com");
-        assert!(name.get_current_subdomain() == "www.google.com");
     }
 
     #[test]
-    fn handles_levels() {
-        let mut name = Name::new("www.google.com");
+    fn generates_subdomain_iter() {
+        let name = Name::new("www.google.com");
+        let fact: Vec<String> = name.iter_subdomains().collect();
+        assert_eq!(fact, ["com", "google.com", "www.google.com"]);
+    }
 
-        assert!(name.get_current_subdomain() == "www.google.com");
-        name.decrease_level();
-        assert!(name.get_current_subdomain() == "google.com");
-        name.decrease_level();
-        assert!(name.get_current_subdomain() == "com");
-        name.decrease_level();
-        assert!(name.get_current_subdomain() == "com");
-        name.increase_level();
-        assert!(name.get_current_subdomain() == "google.com");
-        name.increase_level();
-        assert!(name.get_current_subdomain() == "www.google.com");
-        name.increase_level();
-        assert!(name.get_current_subdomain() == "www.google.com");
+    #[test]
+    fn calculates_level() {
+        let name1 = Name::new("asdf.google.com");
+        let name2 = Name::new("jkl.google.com");
+
+        assert_eq!(2, name1.matching_level(&name2));
     }
 }

@@ -14,10 +14,13 @@ mod util;
 #[tokio::main]
 async fn main() {
     // resolver::run("0.0.0.0", 3053).await;
-    let mut question = Question::new("www.google.com", dnrs::RecordType::A).unwrap();
-    resolver::resolve(question, Arc::new(Mutex::new(Cache::new())))
+
+    let question = Question::new("www.google.com", dnrs::RecordType::A).unwrap();
+    let result = resolver::resolve(question, Arc::new(Mutex::new(Cache::new())))
         .await
         .unwrap();
+
+    println!("{:?}", result);
 }
 
 // async fn query_resolver() {

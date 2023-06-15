@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
@@ -8,38 +8,12 @@ use dnrs::{
     DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
     ResourceRecord,
 };
-use rand::seq::SliceRandom;
 use tokio::net::UdpSocket;
 
 use crate::util::set_response_flags;
 
-const ROOT_NAMESERVERS: [IpAddr; 13] = [
-    IpAddr::V4(Ipv4Addr::new(198, 41, 0, 4)),
-    IpAddr::V4(Ipv4Addr::new(199, 9, 14, 201)),
-    IpAddr::V4(Ipv4Addr::new(192, 33, 4, 12)),
-    IpAddr::V4(Ipv4Addr::new(199, 7, 91, 13)),
-    IpAddr::V4(Ipv4Addr::new(192, 203, 230, 10)),
-    IpAddr::V4(Ipv4Addr::new(192, 5, 5, 241)),
-    IpAddr::V4(Ipv4Addr::new(192, 112, 36, 4)),
-    IpAddr::V4(Ipv4Addr::new(198, 97, 190, 53)),
-    IpAddr::V4(Ipv4Addr::new(192, 36, 148, 17)),
-    IpAddr::V4(Ipv4Addr::new(192, 58, 128, 30)),
-    IpAddr::V4(Ipv4Addr::new(193, 0, 14, 129)),
-    IpAddr::V4(Ipv4Addr::new(199, 7, 83, 42)),
-    IpAddr::V4(Ipv4Addr::new(202, 12, 24, 33)),
-];
-
-struct NsQueue {
-    queue: Vec<Vec<IpAddr>>,
-}
-
-impl NsQueue {
-    pub fn new() -> Self {
-        Self {
-            queue: vec![ROOT_NAMESERVERS.into()],
-        }
-    }
-}
+mod ns_queue;
+use ns_queue::NsQueue;
 
 pub async fn run(ip: &str, port: u16) {
     let sock = UdpSocket::bind((ip, port))
@@ -57,6 +31,7 @@ pub async fn run(ip: &str, port: u16) {
 
         // http://www.dnsflagday.net/2020/
         let mut buf = [0; 1232];
+
         // TODO: Handle if this errors
         let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
 
@@ -76,7 +51,6 @@ async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message
         return None;
     }
 
-    // Validate request
     if request.header.num_questions != 1 || request.header.flags.opcode() != 0 {
         println!("Received unimplemented request");
         let mut flags = set_response_flags(request.header.flags);
@@ -132,49 +106,52 @@ pub async fn resolve(
 
     let mut buf = [0; 1024];
 
-    // This starts with the root nameservers prepopulated
-    let mut ns_queue = NsQueue::new();
+    let mut ns_queue = NsQueue::seeded();
 
     {
         let cache = cache.lock().unwrap();
 
+        let mut level = 0;
+
         for subdomain in question.name.iter_subdomains() {
-            if let Some(authorities) = cache.get(&Name::new(&subdomain)) {
-                let authorities: Vec<IpAddr> = authorities
-                    .iter()
-                    .filter_map(|r| match &r.data {
-                        RecordData::Ns(name) => {
-                            if let Some(records) = cache.get(name) {
-                                // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
-                                for record in records {
-                                    match record.data {
-                                        RecordData::A(addr) => return Some(addr.into()),
-                                        RecordData::Aaaa(addr) => return Some(addr.into()),
-                                        _ => {}
-                                    }
+            level += 1;
+
+            let Some(authorities) = cache.get(&Name::new(&subdomain)) else {
+                continue;
+            };
+
+            let authorities: Vec<IpAddr> = authorities
+                .iter()
+                .filter_map(|r| match &r.data {
+                    RecordData::Ns(name) => {
+                        if let Some(records) = cache.get(name) {
+                            // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
+                            for record in records {
+                                match record.data {
+                                    RecordData::A(addr) => return Some(addr.into()),
+                                    // RecordData::Aaaa(addr) => return Some(addr.into()),
+                                    _ => {}
                                 }
                             }
-
-                            None
                         }
-                        _ => None,
-                    })
-                    .collect();
 
-                ns_queue.queue.push(authorities);
-            }
+                        None
+                    }
+                    _ => None,
+                })
+                .collect();
+
+            ns_queue.insert_multiple(&authorities, level);
         }
     }
 
     let sock = UdpSocket::bind(("0.0.0.0", 0)).await.unwrap();
 
+    // TODO: Some kind of work-limiting mechanism
     loop {
-        let Some(closest_nameserver) = ns_queue.queue.last().unwrap().choose(&mut rand::thread_rng()) else {
-            ns_queue.queue.pop();
-            continue;
-        };
+        let closest_nameserver = ns_queue.pop();
 
-        sock.send_to(&query.to_bytes(), (*closest_nameserver, 53))
+        sock.send_to(&query.to_bytes(), (closest_nameserver, 53))
             .await
             .unwrap();
 
@@ -187,42 +164,35 @@ pub async fn resolve(
             return Ok(message.answers.remove(0));
         }
 
-        if message.header.num_additionals > 0 {
-            if let Some(additional) = message
-                .additionals
-                .iter()
-                .find(|p| matches!(p.data, RecordData::A(_)))
-            {
-                let RecordData::A(data) = additional.data else {
-                    return Err(DnsError::ServerFailure("Don't know how to continue".to_owned()))
+        for authority in message.authorities {
+            if let RecordData::Ns(ref name) = authority.data {
+                let addr = if let Some(addr) = message
+                    .additionals
+                    .iter()
+                    .find(|r| &r.name == name && r.type_ == RecordType::A)
+                {
+                    if let RecordData::A(addr) = addr.data {
+                        Some(addr.into())
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    // TODO: Check the cache or query
+                    let question = Question::new(&name.name, RecordType::A)?;
+                    let temp = resolve(question.clone(), Arc::clone(&cache)).await?;
+
+                    if let RecordData::A(data) = temp.data {
+                        Some(data.into())
+                    } else {
+                        None
+                    }
                 };
 
-                ns_queue.queue.push(vec![IpAddr::V4(data)]);
-                continue;
+                if let Some(addr) = addr {
+                    let level = authority.name.matching_level(&question.name);
+                    ns_queue.insert(addr, level);
+                }
             }
         }
-
-        if message.header.num_authorities > 0 {
-            let authority = message.authorities.first().ok_or(DnsError::ServerFailure(
-                "Bad response from authority".to_owned(),
-            ))?;
-            let RecordData::Ns(ref name) = authority.data else {
-                return Err(DnsError::ServerFailure("Non NS in authorities".to_owned()))
-            };
-
-            let question = Question::new(&name.get_full(), RecordType::A)?;
-
-            let temp = resolve(question, Arc::clone(&cache)).await?;
-            let RecordData::A(data) = temp.data else {
-                return Err(DnsError::ServerFailure("Failed to find authority".to_owned()))
-            };
-
-            ns_queue.queue.push(vec![IpAddr::V4(data)]);
-            continue;
-        }
-
-        return Err(DnsError::ServerFailure(
-            "This should be unreachable".to_owned(),
-        ));
     }
 }
