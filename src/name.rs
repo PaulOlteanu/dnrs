@@ -4,9 +4,8 @@ use std::io::Cursor;
 use bytes::Buf;
 use itertools::Itertools;
 
-use crate::DnsError;
-
 use super::Networkable;
+use crate::DnsError;
 
 // #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 // pub struct Label(pub String);
@@ -75,7 +74,7 @@ impl Networkable for Name {
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
 
-        for section in self.name.iter() {
+        for section in self.name.iter().rev() {
             ret.push(section.len() as u8);
             ret.extend_from_slice(section.as_bytes());
         }

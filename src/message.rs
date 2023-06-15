@@ -1,8 +1,7 @@
 use std::io::Cursor;
 
-use crate::DnsError;
-
 use super::{Header, Networkable, Question, ResourceRecord};
+use crate::DnsError;
 
 #[derive(Debug, Default)]
 pub struct Message {

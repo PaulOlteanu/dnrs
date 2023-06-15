@@ -8,6 +8,7 @@ use dnrs::{
     DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
     ResourceRecord,
 };
+use rand::seq::SliceRandom;
 use tokio::net::UdpSocket;
 
 use crate::util::set_response_flags;
@@ -123,13 +124,13 @@ pub async fn resolve(
     question: Question,
     cache: Arc<Mutex<Cache>>,
 ) -> Result<ResourceRecord, DnsError> {
-    // let flags = Flags::default();
-    // let id = rand::random::<u16>();
-    // let header = Header::new(id, flags);
-    // let mut query = Message::new(header);
-    // query.questions.push(question);
+    let flags = Flags::default();
+    let id = rand::random::<u16>();
+    let header = Header::new(id, flags);
+    let mut query = Message::new(header);
+    query.add_question(question.clone());
 
-    // let mut buf = [0; 1024];
+    let mut buf = [0; 1024];
 
     // This starts with the root nameservers prepopulated
     let mut ns_queue = NsQueue::new();
@@ -139,73 +140,89 @@ pub async fn resolve(
 
         for subdomain in question.name.iter_subdomains() {
             if let Some(authorities) = cache.get(&Name::new(&subdomain)) {
-                let authorities: Vec<_> = authorities
+                let authorities: Vec<IpAddr> = authorities
                     .iter()
                     .filter_map(|r| match &r.data {
                         RecordData::Ns(name) => {
-                            // Check the cache for a records for this server
+                            if let Some(records) = cache.get(name) {
+                                // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
+                                for record in records {
+                                    match record.data {
+                                        RecordData::A(addr) => return Some(addr.into()),
+                                        RecordData::Aaaa(addr) => return Some(addr.into()),
+                                        _ => {}
+                                    }
+                                }
+                            }
+
                             None
                         }
                         _ => None,
                     })
                     .collect();
+
                 ns_queue.queue.push(authorities);
             }
         }
     }
 
+    let sock = UdpSocket::bind(("0.0.0.0", 0)).await.unwrap();
+
     loop {
-        // Check the cache for the closest subdomain authority(ies)
-        // Add them
+        let Some(closest_nameserver) = ns_queue.queue.last().unwrap().choose(&mut rand::thread_rng()) else {
+            ns_queue.queue.pop();
+            continue;
+        };
 
-        // sock.send_to(&query.to_bytes(), (nameserver, 53))
-        //     .await
-        //     .unwrap();
+        sock.send_to(&query.to_bytes(), (*closest_nameserver, 53))
+            .await
+            .unwrap();
 
-        // // TODO: Need to do validation of this message
-        // let response_len = sock.recv(&mut buf).await?;
-        // let mut cursor = Cursor::new(&buf[..response_len]);
-        // let mut message = Message::from_bytes(&mut cursor).unwrap();
+        // TODO: Need to do validation of this message
+        let response_len = sock.recv(&mut buf).await?;
+        let mut cursor = Cursor::new(&buf[..response_len]);
+        let mut message = Message::from_bytes(&mut cursor).unwrap();
 
-        // if message.header.num_answers == 1 {
-        //     return Ok(message.answers.remove(0));
-        // }
+        if message.header.num_answers == 1 {
+            return Ok(message.answers.remove(0));
+        }
 
-        // if message.header.num_additionals > 0 {
-        //     if let Some(additional) = message
-        //         .additionals
-        //         .iter()
-        //         .find(|p| matches!(p.data, RecordData::A(_)))
-        //     {
-        //         let RecordData::A(data) = additional.data else {
-        //             return Err(DnsError::ServerFailure("Don't know how to continue".to_owned()))
-        //         };
-        //         nameserver = Ipv4Addr::from(data);
-        //         continue;
-        //     }
-        // }
+        if message.header.num_additionals > 0 {
+            if let Some(additional) = message
+                .additionals
+                .iter()
+                .find(|p| matches!(p.data, RecordData::A(_)))
+            {
+                let RecordData::A(data) = additional.data else {
+                    return Err(DnsError::ServerFailure("Don't know how to continue".to_owned()))
+                };
 
-        // if message.header.num_authorities > 0 {
-        //     let authority = message.authorities.first().ok_or(DnsError::ServerFailure(
-        //         "Bad response from authority".to_owned(),
-        //     ))?;
-        //     let RecordData::Ns(ref name) = authority.data else {
-        //         return Err(DnsError::ServerFailure("Non NS in authorities".to_owned()))
-        //     };
+                ns_queue.queue.push(vec![IpAddr::V4(Ipv4Addr::from(data))]);
+                continue;
+            }
+        }
 
-        //     let question = Question::new(&name.get_full(), RecordType::A)?;
+        if message.header.num_authorities > 0 {
+            let authority = message.authorities.first().ok_or(DnsError::ServerFailure(
+                "Bad response from authority".to_owned(),
+            ))?;
+            let RecordData::Ns(ref name) = authority.data else {
+                return Err(DnsError::ServerFailure("Non NS in authorities".to_owned()))
+            };
 
-        //     let temp = resolve(sock, question, Arc::clone(&cache)).await?;
-        //     let RecordData::A(data) = temp.data else {
-        //         return Err(DnsError::ServerFailure("Failed to find authority".to_owned()))
-        //     };
+            let question = Question::new(&name.get_full(), RecordType::A)?;
 
-        //     nameserver = Ipv4Addr::from(data);
-        //     continue;
-        // }
+            let temp = resolve(question, Arc::clone(&cache)).await?;
+            let RecordData::A(data) = temp.data else {
+                return Err(DnsError::ServerFailure("Failed to find authority".to_owned()))
+            };
 
-        // return Err(DnsError::ServerFailure(
-        //     "This should be unreachable".to_owned(),
-        // ));
+            ns_queue.queue.push(vec![IpAddr::V4(Ipv4Addr::from(data))]);
+            continue;
+        }
+
+        return Err(DnsError::ServerFailure(
+            "This should be unreachable".to_owned(),
+        ));
     }
 }

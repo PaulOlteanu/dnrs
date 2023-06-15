@@ -1,7 +1,5 @@
-use std::{
-    io::Cursor,
-    net::{Ipv4Addr, Ipv6Addr},
-};
+use std::io::Cursor;
+use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bytes::Buf;
 

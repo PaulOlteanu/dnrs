@@ -5,7 +5,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use dnrs::{cache::Cache, Question};
+use dnrs::cache::Cache;
+use dnrs::Question;
 
 mod resolver;
 mod util;
@@ -14,7 +15,9 @@ mod util;
 async fn main() {
     // resolver::run("0.0.0.0", 3053).await;
     let mut question = Question::new("www.google.com", dnrs::RecordType::A).unwrap();
-    resolver::resolve(question, Arc::new(Mutex::new(Cache::new()))).await.unwrap();
+    resolver::resolve(question, Arc::new(Mutex::new(Cache::new())))
+        .await
+        .unwrap();
 }
 
 // async fn query_resolver() {

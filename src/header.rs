@@ -3,9 +3,8 @@ use std::io::Cursor;
 use bitfield::bitfield;
 use bytes::Buf;
 
-use crate::DnsError;
-
 use super::Networkable;
+use crate::DnsError;
 
 bitfield! {
     #[derive(Clone, Copy, Default)]
