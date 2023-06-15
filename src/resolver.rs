@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
-use dnrs::cache::Cache;
 use dnrs::{
     DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
     ResourceRecord,
@@ -14,6 +13,9 @@ use crate::util::set_response_flags;
 
 mod ns_queue;
 use ns_queue::NsQueue;
+
+mod cache;
+use cache::Cache;
 
 pub async fn run(ip: &str, port: u16) {
     let sock = UdpSocket::bind((ip, port))

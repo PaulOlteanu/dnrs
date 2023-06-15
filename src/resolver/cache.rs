@@ -1,5 +1,5 @@
 use std::collections::HashMap;
 
-use crate::{Name, ResourceRecord};
+use dnrs::{Name, ResourceRecord};
 
 pub type Cache = HashMap<Name, Vec<ResourceRecord>>;

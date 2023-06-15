@@ -2,7 +2,6 @@ use std::fmt::Display;
 use std::io::Cursor;
 
 use bytes::Buf;
-use itertools::Itertools;
 
 use super::Networkable;
 use crate::DnsError;
@@ -120,11 +119,6 @@ impl Networkable for Name {
 #[cfg(test)]
 mod tests {
     use crate::Name;
-
-    #[test]
-    fn creates_successfully() {
-        let name = Name::new("www.google.com");
-    }
 
     #[test]
     fn generates_subdomain_iter() {

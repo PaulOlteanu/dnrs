@@ -1,26 +1,9 @@
-// use std::io::Cursor;
-
-// use dnrs::{Flags, Header, Message, Networkable, Question};
-// use tokio::net::UdpSocket;
-
-use std::sync::{Arc, Mutex};
-
-use dnrs::cache::Cache;
-use dnrs::Question;
-
 mod resolver;
 mod util;
 
 #[tokio::main]
 async fn main() {
-    // resolver::run("0.0.0.0", 3053).await;
-
-    let question = Question::new("www.google.com", dnrs::RecordType::A).unwrap();
-    let result = resolver::resolve(question, Arc::new(Mutex::new(Cache::new())))
-        .await
-        .unwrap();
-
-    println!("{:?}", result);
+    resolver::run("0.0.0.0", 3053).await;
 }
 
 // async fn query_resolver() {
