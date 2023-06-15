@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
-use dnrs::cache::{Cache, CacheKey};
+use dnrs::cache::Cache;
 use dnrs::{
     DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
     ResourceRecord,
@@ -136,17 +136,20 @@ pub async fn resolve(
 
     {
         let cache = cache.lock().unwrap();
+
         for subdomain in question.name.iter_subdomains() {
-            let key = CacheKey::new(1, RecordType::Ns, Name::new(&subdomain));
-
-            if let Some(authorities) = cache.get(&key) {
-                // let authorities = authorities
-                //     .iter()
-                //     .map(|r| {
-                //         if let RecordData::A(a) = r.data {
-
-                //     }});
-                // ns_queue.queue.push(vec![])
+            if let Some(authorities) = cache.get(&Name::new(&subdomain)) {
+                let authorities: Vec<_> = authorities
+                    .iter()
+                    .filter_map(|r| match &r.data {
+                        RecordData::Ns(name) => {
+                            // Check the cache for a records for this server
+                            None
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                ns_queue.queue.push(authorities);
             }
         }
     }
