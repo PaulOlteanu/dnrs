@@ -45,9 +45,11 @@ impl Networkable for Message {
     fn to_bytes(&self) -> Vec<u8> {
         let mut response = Vec::new();
         response.extend_from_slice(&self.header.to_bytes());
+
         for question in self.questions.iter() {
             response.extend_from_slice(&question.to_bytes())
         }
+
         for record in self.answers.iter() {
             response.extend_from_slice(&record.to_bytes())
         }

@@ -24,7 +24,9 @@ bitfield! {
     // recursion available
     pub ra, set_ra: 7;
     // reserved
-    pub z, set_z: 6, 4;
+    pub z, set_z: 6;
+    pub ad, set_ad: 5;
+    pub cd, set_cd: 4;
     // response code
     pub rcode, set_rcode: 3, 0;
 }

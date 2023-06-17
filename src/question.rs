@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use bytes::Buf;
-use num_traits::cast::{FromPrimitive, ToPrimitive};
+use num_traits::cast::FromPrimitive;
 
 use super::{Name, Networkable};
 use crate::{DnsError, RecordType};
@@ -14,16 +14,12 @@ pub struct Question {
 }
 
 impl Question {
-    pub fn new(name: &str, type_: RecordType) -> Result<Self, DnsError> {
-        if name.len() > 253 {
-            return Err(DnsError::FormatError);
-        }
-
-        Ok(Self {
-            name: Name::new(name),
+    pub fn new(name: Name, type_: RecordType) -> Self {
+        Self {
+            name,
             type_,
             class: 1,
-        })
+        }
     }
 }
 
@@ -32,7 +28,7 @@ impl Networkable for Question {
         let mut ret = Vec::new();
 
         ret.extend_from_slice(&self.name.to_bytes());
-        ret.extend_from_slice(&self.type_.to_u16().unwrap().to_be_bytes());
+        ret.extend_from_slice(&(self.type_ as u16).to_be_bytes());
         ret.extend_from_slice(&self.class.to_be_bytes());
 
         ret

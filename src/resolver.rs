@@ -17,6 +17,9 @@ use ns_queue::NsQueue;
 mod cache;
 use cache::Cache;
 
+mod host;
+use host::Host;
+
 pub async fn run(ip: &str, port: u16) {
     let sock = UdpSocket::bind((ip, port))
         .await
@@ -48,7 +51,7 @@ pub async fn run(ip: &str, port: u16) {
 async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message> {
     let mut request = Message::from_bytes(&mut Cursor::new(data)).unwrap();
 
-    if request.header.flags.qr() || request.header.flags.z() != 0 {
+    if request.header.flags.qr() {
         println!("Discarding request");
         return None;
     }
@@ -68,18 +71,15 @@ async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message
 
     let result = resolve(question.clone(), Arc::clone(&cache)).await;
 
-    if let Ok(record) = result {
-        // {
-        //     let mut cache = cache.lock().unwrap();
-        //     cache.insert(CacheKey::from(&record), record.clone());
-        // }
-
+    if let Ok(records) = result {
         let flags = set_response_flags(request.header.flags);
         let header = Header::new(request.header.id, flags);
 
         let mut response = Message::new(header);
         response.add_question(question);
-        response.add_answer(record);
+        for record in records {
+            response.add_answer(record);
+        }
 
         Some(response)
     } else {
@@ -99,12 +99,14 @@ async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message
 pub async fn resolve(
     question: Question,
     cache: Arc<Mutex<Cache>>,
-) -> Result<ResourceRecord, DnsError> {
+) -> Result<Vec<ResourceRecord>, DnsError> {
     let flags = Flags::default();
     let id = rand::random::<u16>();
     let header = Header::new(id, flags);
     let mut query = Message::new(header);
     query.add_question(question.clone());
+
+    let mut response = Vec::new();
 
     let mut buf = [0; 1024];
 
@@ -113,16 +115,14 @@ pub async fn resolve(
     {
         let cache = cache.lock().unwrap();
 
-        let mut level = 0;
-
-        for subdomain in question.name.iter_subdomains() {
-            level += 1;
+        for (level, subdomain) in question.name.iter_subdomains().enumerate() {
+            let level = level + 1;
 
             let Some(authorities) = cache.get(&Name::new(&subdomain)) else {
                 continue;
             };
 
-            let authorities: Vec<IpAddr> = authorities
+            let authorities: Vec<Host> = authorities
                 .iter()
                 .filter_map(|r| match &r.data {
                     RecordData::Ns(name) => {
@@ -153,17 +153,58 @@ pub async fn resolve(
     loop {
         let closest_nameserver = ns_queue.pop();
 
-        sock.send_to(&query.to_bytes(), (closest_nameserver, 53))
-            .await
-            .unwrap();
+        if let Some(ip) = closest_nameserver.get_ip() {
+            sock.send_to(&query.to_bytes(), (ip, 53)).await.unwrap();
+        } else {
+            let resolution = resolve(
+                Question::new(closest_nameserver.name().clone().unwrap(), RecordType::A),
+                Arc::clone(&cache),
+            )
+            .await?;
+
+            let Some(ResourceRecord{data: RecordData::A(ip), ..}) = resolution
+            .iter()
+            .find(|rr| rr.type_ == RecordType::A) else {
+                continue;
+            };
+            sock.send_to(&query.to_bytes(), (*ip, 53)).await.unwrap();
+        }
 
         // TODO: Need to do validation of this message
         let response_len = sock.recv(&mut buf).await?;
         let mut cursor = Cursor::new(&buf[..response_len]);
         let mut message = Message::from_bytes(&mut cursor).unwrap();
 
-        if message.header.num_answers == 1 {
-            return Ok(message.answers.remove(0));
+        if message.header.num_answers != 0 {
+            if let Some(idx) = message
+                .answers
+                .iter()
+                .position(|rr| rr.type_ == question.type_)
+            {
+                response.push(message.answers.remove(idx));
+                return Ok(response);
+            }
+
+            // If we don't have an answer that matches the question
+            if let Some(rr) = message
+                .answers
+                .iter()
+                .find(|rr| rr.type_ == RecordType::Cname)
+            {
+                response.push(rr.clone());
+
+                let RecordData::Cname(name) = &rr.data else {
+                    unreachable!();
+                };
+
+                let answer = resolve(Question::new(name.clone(), question.type_), cache).await?;
+
+                response.extend(answer);
+
+                return Ok(response);
+            }
+
+            panic!();
         }
 
         for authority in message.authorities {
@@ -174,26 +215,20 @@ pub async fn resolve(
                     .find(|r| &r.name == name && r.type_ == RecordType::A)
                 {
                     if let RecordData::A(addr) = addr.data {
-                        Some(addr.into())
+                        let level = authority.name.matching_level(&question.name);
+                        ns_queue.insert(addr, level);
                     } else {
                         unreachable!()
                     }
                 } else {
-                    // TODO: Check the cache or query
-                    let question = Question::new(&name.name, RecordType::A)?;
-                    let temp = resolve(question.clone(), Arc::clone(&cache)).await?;
-
-                    if let RecordData::A(data) = temp.data {
-                        Some(data.into())
-                    } else {
-                        None
-                    }
+                    // TODO: Check the cache
+                    // The queue should also  have separate stores at each level
+                    // for servers with only names, and servers with names & ips
+                    // so that we pick from the resolved ones first
+                    let level = authority.name.matching_level(name);
+                    ns_queue.insert(name.clone(), level);
+                    continue;
                 };
-
-                if let Some(addr) = addr {
-                    let level = authority.name.matching_level(&question.name);
-                    ns_queue.insert(addr, level);
-                }
             }
         }
     }
