@@ -29,10 +29,8 @@ impl Host {
     pub fn get_ip(&self) -> Option<IpAddr> {
         if let Some(ipv4) = self.ipv4 {
             Some(IpAddr::V4(ipv4))
-        } else if let Some(ipv6) = self.ipv6 {
-            Some(IpAddr::V6(ipv6))
         } else {
-            None
+            self.ipv6.map(IpAddr::V6)
         }
     }
 }

@@ -209,7 +209,7 @@ pub async fn resolve(
 
         for authority in message.authorities {
             if let RecordData::Ns(ref name) = authority.data {
-                let addr = if let Some(addr) = message
+                if let Some(addr) = message
                     .additionals
                     .iter()
                     .find(|r| &r.name == name && r.type_ == RecordType::A)
@@ -228,7 +228,7 @@ pub async fn resolve(
                     let level = authority.name.matching_level(name);
                     ns_queue.insert(name.clone(), level);
                     continue;
-                };
+                }
             }
         }
     }

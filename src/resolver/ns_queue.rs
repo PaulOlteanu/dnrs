@@ -40,10 +40,7 @@ impl NsQueue {
 
     pub fn seeded() -> Self {
         let mut queue = HashMap::new();
-        let seed = ROOT_NAMESERVERS
-            .iter()
-            .map(|ns| ns.clone().into())
-            .collect();
+        let seed = ROOT_NAMESERVERS.iter().map(|ns| (*ns).into()).collect();
         queue.insert(0, seed);
         Self {
             queue,
