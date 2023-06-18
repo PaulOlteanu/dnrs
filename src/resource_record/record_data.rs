@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 use bytes::Buf;
+use tracing::warn;
 
 use crate::{DnsError, Name, Networkable, RecordType};
 
@@ -30,8 +31,8 @@ impl RecordData {
             RecordType::Txt => Err(DnsError::NotImplemented),
             RecordType::Aaaa => Ok(Self::Aaaa(bytes.get_u128().to_be_bytes().into())),
 
-            other => {
-                println!("Received record data of unknown type: {:?}", other);
+            record_type => {
+                warn!(?record_type, "received unimplemented record data");
                 bytes.advance(rd_length as usize);
                 Ok(Self::Other)
             }

@@ -3,6 +3,7 @@ mod util;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt().with_env_filter("debug").pretty().init();
     resolver::run("0.0.0.0", 3053).await;
 }
 

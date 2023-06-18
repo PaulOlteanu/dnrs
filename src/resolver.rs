@@ -1,5 +1,4 @@
 use std::io::Cursor;
-use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
@@ -8,6 +7,7 @@ use dnrs::{
     ResourceRecord,
 };
 use tokio::net::UdpSocket;
+use tracing::{debug, debug_span, info, instrument, span, trace, warn, Instrument, Level};
 
 use crate::util::set_response_flags;
 
@@ -21,6 +21,9 @@ mod host;
 use host::Host;
 
 pub async fn run(ip: &str, port: u16) {
+    info!("Starting udp server");
+
+    // TODO: Spawn 2 tasks for tcp and udp
     let sock = UdpSocket::bind((ip, port))
         .await
         .expect("Couldn't run server");
@@ -29,35 +32,37 @@ pub async fn run(ip: &str, port: u16) {
 
     let sock = Arc::new(sock);
 
-    // TODO: Spawn 2 tasks for tcp and udp
     loop {
-        let sock = Arc::clone(&sock);
-        let cache = Arc::clone(&cache);
-
         // http://www.dnsflagday.net/2020/
         let mut buf = [0; 1232];
 
         // TODO: Handle if this errors
         let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
+        info!(address=?addr, "received request");
+
+        let sock = Arc::clone(&sock);
+        let cache = Arc::clone(&cache);
 
         tokio::spawn(async move {
-            if let Some(response) = handle_request(cache, &buf[0..len]).await {
+            if let Some(response) = handle_request(&buf[0..len], cache).await {
                 sock.send_to(&response.to_bytes(), addr).await.ok();
             }
         });
     }
 }
 
-async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message> {
+#[instrument(skip_all)]
+async fn handle_request(data: &[u8], cache: Arc<Mutex<Cache>>) -> Option<Message> {
     let mut request = Message::from_bytes(&mut Cursor::new(data)).unwrap();
+    debug!(?request, "parsed request");
 
     if request.header.flags.qr() {
-        println!("Discarding request");
+        warn!(?request, "discarding request");
         return None;
     }
 
     if request.header.num_questions != 1 || request.header.flags.opcode() != 0 {
-        println!("Received unimplemented request");
+        warn!(?request, "unimplemented request");
         let mut flags = set_response_flags(request.header.flags);
         flags.set_rcode(4);
 
@@ -83,6 +88,7 @@ async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message
 
         Some(response)
     } else {
+        warn!("responding with error");
         let mut flags = set_response_flags(request.header.flags);
         flags.set_rcode(2);
 
@@ -95,6 +101,7 @@ async fn handle_request(cache: Arc<Mutex<Cache>>, data: &[u8]) -> Option<Message
     }
 }
 
+#[instrument(skip(cache), ret, err(Debug))]
 #[async_recursion]
 pub async fn resolve(
     question: Question,
@@ -152,9 +159,8 @@ pub async fn resolve(
     // TODO: Some kind of work-limiting mechanism
     loop {
         let closest_nameserver = ns_queue.pop();
-
-        if let Some(ip) = closest_nameserver.get_ip() {
-            sock.send_to(&query.to_bytes(), (ip, 53)).await.unwrap();
+        let ip = if let Some(ip) = closest_nameserver.get_ip() {
+            ip
         } else {
             let resolution = resolve(
                 Question::new(closest_nameserver.name().clone().unwrap(), RecordType::A),
@@ -167,15 +173,22 @@ pub async fn resolve(
             .find(|rr| rr.type_ == RecordType::A) else {
                 continue;
             };
-            sock.send_to(&query.to_bytes(), (*ip, 53)).await.unwrap();
-        }
+            (*ip).into()
+        };
+
+        debug!(address=?closest_nameserver, "querying nameserver");
+        sock.send_to(&query.to_bytes(), (ip, 53)).await.unwrap();
 
         // TODO: Need to do validation of this message
         let response_len = sock.recv(&mut buf).await?;
         let mut cursor = Cursor::new(&buf[..response_len]);
         let mut message = Message::from_bytes(&mut cursor).unwrap();
 
+        debug!("received response from nameserver");
+        trace!(?message);
+
         if message.header.num_answers != 0 {
+            debug!(?message.answers, "received answers from nameserver");
             if let Some(idx) = message
                 .answers
                 .iter()
@@ -197,6 +210,7 @@ pub async fn resolve(
                     unreachable!();
                 };
 
+                info!("received cname from nameserver, re-starting resolution process");
                 let answer = resolve(Question::new(name.clone(), question.type_), cache).await?;
 
                 response.extend(answer);
@@ -214,9 +228,11 @@ pub async fn resolve(
                     .iter()
                     .find(|r| &r.name == name && r.type_ == RecordType::A)
                 {
-                    if let RecordData::A(addr) = addr.data {
+                    if let RecordData::A(ip) = addr.data {
                         let level = authority.name.matching_level(&question.name);
-                        ns_queue.insert(addr, level);
+                        let host: Host = (addr.name.clone(), Some(ip), None).into();
+                        debug!(?host, level, "adding host to ns queue");
+                        ns_queue.insert(host, level);
                     } else {
                         unreachable!()
                     }

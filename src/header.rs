@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use bitfield::bitfield;
 use bytes::Buf;
+use tracing::{instrument, trace, trace_span, warn};
 
 use super::Networkable;
 use crate::DnsError;
@@ -32,10 +33,12 @@ bitfield! {
 }
 
 impl Networkable for Flags {
+    #[instrument(level = "trace", skip_all)]
     fn to_bytes(&self) -> Vec<u8> {
         self.0.to_be_bytes().to_vec()
     }
 
+    #[instrument(level = "trace", skip_all)]
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         if bytes.remaining() < 2 {
             return Err(DnsError::FormatError);
@@ -68,6 +71,7 @@ impl Header {
 }
 
 impl Networkable for Header {
+    #[instrument(level = "trace", skip_all)]
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::with_capacity(12);
         ret.extend_from_slice(&self.id.to_be_bytes());
@@ -80,8 +84,10 @@ impl Networkable for Header {
         ret
     }
 
+    #[instrument(level = "trace", skip_all)]
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         if bytes.remaining() < 12 {
+            warn!("insufficient remaining bytes");
             return Err(DnsError::FormatError);
         }
 

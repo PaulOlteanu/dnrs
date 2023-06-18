@@ -2,6 +2,7 @@ use std::io::Cursor;
 
 use bytes::Buf;
 use num_traits::cast::FromPrimitive;
+use tracing::instrument;
 
 use super::{Name, Networkable};
 use crate::{DnsError, RecordType};
@@ -24,6 +25,7 @@ impl Question {
 }
 
 impl Networkable for Question {
+    #[instrument(level = "trace", skip_all)]
     fn to_bytes(&self) -> Vec<u8> {
         let mut ret = Vec::new();
 
@@ -34,6 +36,7 @@ impl Networkable for Question {
         ret
     }
 
+    #[instrument(level = "trace", skip_all)]
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let name = Name::from_bytes(bytes).unwrap();
 
