@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
 use async_recursion::async_recursion;
@@ -7,7 +8,7 @@ use dnrs::{
     ResourceRecord,
 };
 use tokio::net::UdpSocket;
-use tracing::{debug, debug_span, info, instrument, span, trace, warn, Instrument, Level};
+use tracing::{debug, info, instrument, trace, warn};
 
 use crate::util::set_response_flags;
 
@@ -17,8 +18,22 @@ use ns_queue::NsQueue;
 mod cache;
 use cache::Cache;
 
-mod host;
-use host::Host;
+// TODO: Make this a list of hosts
+const ROOT_NAMESERVERS: [Ipv4Addr; 13] = [
+    Ipv4Addr::new(198, 41, 0, 4),
+    Ipv4Addr::new(199, 9, 14, 201),
+    Ipv4Addr::new(192, 33, 4, 12),
+    Ipv4Addr::new(199, 7, 91, 13),
+    Ipv4Addr::new(192, 203, 230, 10),
+    Ipv4Addr::new(192, 5, 5, 241),
+    Ipv4Addr::new(192, 112, 36, 4),
+    Ipv4Addr::new(198, 97, 190, 53),
+    Ipv4Addr::new(192, 36, 148, 17),
+    Ipv4Addr::new(192, 58, 128, 30),
+    Ipv4Addr::new(193, 0, 14, 129),
+    Ipv4Addr::new(199, 7, 83, 42),
+    Ipv4Addr::new(202, 12, 27, 33),
+];
 
 pub async fn run(ip: &str, port: u16) {
     info!("Starting udp server");
@@ -117,7 +132,11 @@ pub async fn resolve(
 
     let mut buf = [0; 1024];
 
-    let mut ns_queue = NsQueue::seeded();
+    let mut ns_queue = NsQueue::new();
+    // TODO: Make this better
+    for ns in ROOT_NAMESERVERS {
+        ns_queue.insert(Name::new(""), Some(IpAddr::V4(ns)), 0);
+    }
 
     {
         let cache = cache.lock().unwrap();
@@ -129,28 +148,24 @@ pub async fn resolve(
                 continue;
             };
 
-            let authorities: Vec<Host> = authorities
-                .iter()
-                .filter_map(|r| match &r.data {
-                    RecordData::Ns(name) => {
-                        if let Some(records) = cache.get(name) {
-                            // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
-                            for record in records {
-                                match record.data {
-                                    RecordData::A(addr) => return Some(addr.into()),
-                                    // RecordData::Aaaa(addr) => return Some(addr.into()),
-                                    _ => {}
-                                }
+            for authority in authorities.iter().filter_map(|r| match &r.data {
+                RecordData::Ns(name) => {
+                    if let Some(records) = cache.get(name) {
+                        // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
+                        for record in records {
+                            if let RecordData::A(ip) = record.data {
+                                return Some((name.clone(), Some(IpAddr::V4(ip))));
                             }
                         }
-
-                        None
                     }
-                    _ => None,
-                })
-                .collect();
 
-            ns_queue.insert_multiple(&authorities, level);
+                    None
+                }
+
+                _ => None,
+            }) {
+                ns_queue.insert(authority.0, authority.1, level);
+            }
         }
     }
 
@@ -158,12 +173,15 @@ pub async fn resolve(
 
     // TODO: Some kind of work-limiting mechanism
     loop {
-        let closest_nameserver = ns_queue.pop();
-        let ip = if let Some(ip) = closest_nameserver.get_ip() {
+        let Some(closest_nameserver) = ns_queue.pop() else {
+            return Err(DnsError::ServerFailure("failed to resolve".to_owned()))
+        };
+
+        let ip = if let Some(ip) = closest_nameserver.1 {
             ip
         } else {
             let resolution = resolve(
-                Question::new(closest_nameserver.name().clone().unwrap(), RecordType::A),
+                Question::new(closest_nameserver.0.clone(), RecordType::A),
                 Arc::clone(&cache),
             )
             .await?;
@@ -221,31 +239,53 @@ pub async fn resolve(
             panic!();
         }
 
-        for authority in message.authorities {
-            if let RecordData::Ns(ref name) = authority.data {
-                if let Some(addr) = message
+        let mut ns_records = message
+            .authorities
+            .iter()
+            .filter(|rr| rr.type_ == RecordType::Ns)
+            .peekable();
+
+        if ns_records.peek().is_some() {
+            for record in ns_records {
+                let RecordData::Ns(authority_name) = &record.data else {
+                    unreachable!()
+                };
+
+                if let Some(ResourceRecord {
+                    data: RecordData::A(ip),
+                    ..
+                }) = message
                     .additionals
                     .iter()
-                    .find(|r| &r.name == name && r.type_ == RecordType::A)
+                    .find(|r| &r.name == authority_name && r.type_ == RecordType::A)
                 {
-                    if let RecordData::A(ip) = addr.data {
-                        let level = authority.name.matching_level(&question.name);
-                        let host: Host = (addr.name.clone(), Some(ip), None).into();
-                        debug!(?host, level, "adding host to ns queue");
-                        ns_queue.insert(host, level);
-                    } else {
-                        unreachable!()
-                    }
+                    let level = record.name.matching_level(&question.name);
+                    trace!(?authority_name, level, "adding host to ns queue");
+                    ns_queue.insert(authority_name.clone(), Some(IpAddr::V4(*ip)), level);
                 } else {
                     // TODO: Check the cache
-                    // The queue should also  have separate stores at each level
+                    // The queue should also have separate stores at each level
                     // for servers with only names, and servers with names & ips
                     // so that we pick from the resolved ones first
-                    let level = authority.name.matching_level(name);
-                    ns_queue.insert(name.clone(), level);
+                    let level = record.name.matching_level(&question.name);
+                    ns_queue.insert(authority_name.clone(), None, level);
                     continue;
                 }
             }
+
+            continue;
         }
+
+        let soa = message
+            .authorities
+            .iter()
+            .find(|rr| rr.type_ == RecordType::Soa);
+
+        if let Some(soa_record) = soa {
+            response.push(soa_record.clone());
+            return Ok(response);
+        }
+
+        panic!()
     }
 }

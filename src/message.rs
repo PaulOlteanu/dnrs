@@ -44,7 +44,7 @@ impl Message {
 }
 
 impl Networkable for Message {
-    #[instrument(level="debug", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     fn to_bytes(&self) -> Vec<u8> {
         let mut response = Vec::new();
         response.extend_from_slice(&self.header.to_bytes());
@@ -68,7 +68,7 @@ impl Networkable for Message {
         response
     }
 
-    #[instrument(level="debug", skip_all)]
+    #[instrument(level = "debug", skip_all)]
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let header = Header::from_bytes(bytes).unwrap();
 

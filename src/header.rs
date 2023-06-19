@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use bitfield::bitfield;
 use bytes::Buf;
-use tracing::{instrument, trace, trace_span, warn};
+use tracing::{instrument, warn};
 
 use super::Networkable;
 use crate::DnsError;

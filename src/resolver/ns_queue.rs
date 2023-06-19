@@ -1,30 +1,17 @@
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 
+use dnrs::Name;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
-use super::host::Host;
-
-const ROOT_NAMESERVERS: [Ipv4Addr; 13] = [
-    Ipv4Addr::new(198, 41, 0, 4),
-    Ipv4Addr::new(199, 9, 14, 201),
-    Ipv4Addr::new(192, 33, 4, 12),
-    Ipv4Addr::new(199, 7, 91, 13),
-    Ipv4Addr::new(192, 203, 230, 10),
-    Ipv4Addr::new(192, 5, 5, 241),
-    Ipv4Addr::new(192, 112, 36, 4),
-    Ipv4Addr::new(198, 97, 190, 53),
-    Ipv4Addr::new(192, 36, 148, 17),
-    Ipv4Addr::new(192, 58, 128, 30),
-    Ipv4Addr::new(193, 0, 14, 129),
-    Ipv4Addr::new(199, 7, 83, 42),
-    Ipv4Addr::new(202, 12, 24, 33),
-];
+type QueueLevel = usize;
+type HostLists = (Vec<(Name, IpAddr)>, Vec<Name>);
+type Queue = HashMap<QueueLevel, HostLists>;
 
 #[derive(Clone, Default, Debug)]
 pub struct NsQueue {
-    queue: HashMap<usize, Vec<Host>>,
+    queue: Queue,
     inserted_levels: HashSet<usize>,
     max_level: usize,
 }
@@ -38,53 +25,45 @@ impl NsQueue {
         }
     }
 
-    pub fn seeded() -> Self {
-        let mut queue = HashMap::new();
-        let seed = ROOT_NAMESERVERS.iter().map(|ns| (*ns).into()).collect();
-        queue.insert(0, seed);
-        Self {
-            queue,
-            inserted_levels: HashSet::from([0]),
-            max_level: 0,
+    pub fn insert(&mut self, name: Name, ip: Option<IpAddr>, level: usize) {
+        self.max_level = self.max_level.max(level);
+        self.inserted_levels.insert(level);
+
+        let lists = self.queue.entry(level).or_insert((Vec::new(), Vec::new()));
+        if let Some(ip) = ip {
+            lists.0.push((name, ip));
+        } else {
+            lists.1.push(name);
         }
-    }
-
-    pub fn insert<T>(&mut self, host: T, level: usize)
-    where
-        T: Into<Host>,
-    {
-        self.max_level = self.max_level.max(level);
-        self.inserted_levels.insert(level);
-
-        self.queue
-            .entry(level)
-            .or_insert(Vec::new())
-            .push(host.into())
-    }
-
-    pub fn insert_multiple(&mut self, hosts: &[Host], level: usize) {
-        self.max_level = self.max_level.max(level);
-        self.inserted_levels.insert(level);
-
-        self.queue
-            .entry(level)
-            .or_insert(Vec::new())
-            .extend_from_slice(hosts)
     }
 
     /// Gets one of the addresses (randomly selected) at the highest priority
     /// Note that this is not guaranteed to be the same one every time
     /// That means 2 ns_queue.peek() operations in a row maight not be equal
-    pub fn peek(&self) -> &Host {
-        // This should never panic because our push and pop functions will guarantee a non-empty vec with the key of self.max_level
-        let addrs = self.queue.get(&self.max_level).unwrap();
-        addrs.choose(&mut rand::thread_rng()).unwrap()
+    pub fn peek(&self) -> Option<(&Name, Option<IpAddr>)> {
+        let lists = self.queue.get(&self.max_level)?;
+
+        let mut rng = rand::thread_rng();
+
+        if let Some((name, ip)) = lists.0.choose(&mut rng) {
+            Some((name, Some(*ip)))
+        } else {
+            Some((lists.1.choose(&mut rng)?, None))
+        }
     }
 
     // TODO: This implementation needs to be much better
-    pub fn pop(&mut self) -> Host {
-        let addrs = self.queue.get_mut(&self.max_level).unwrap();
-        let idx = rand::thread_rng().gen_range(0..addrs.len());
-        addrs.swap_remove(idx)
+    pub fn pop(&mut self) -> Option<(Name, Option<IpAddr>)> {
+        let lists = self.queue.get_mut(&self.max_level)?;
+        if !lists.0.is_empty() {
+            let idx = rand::thread_rng().gen_range(0..lists.0.len());
+            let result = lists.0.swap_remove(idx);
+            Some((result.0, Some(result.1)))
+        } else if !lists.1.is_empty() {
+            let idx = rand::thread_rng().gen_range(0..lists.1.len());
+            Some((lists.1.swap_remove(idx), None))
+        } else {
+            None
+        }
     }
 }
