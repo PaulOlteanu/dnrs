@@ -7,32 +7,31 @@ use dnrs::{
     DnsError, Flags, Header, Message, Name, Networkable, Question, RecordData, RecordType,
     ResourceRecord,
 };
+use itertools::{Either, Itertools};
+use rand::seq::SliceRandom;
 use tokio::net::UdpSocket;
 use tracing::{debug, info, instrument, trace, warn};
 
 use crate::util::set_response_flags;
 
-mod ns_queue;
-use ns_queue::NsQueue;
-
 mod cache;
 use cache::Cache;
 
-// TODO: Make this a list of hosts
-const ROOT_NAMESERVERS: [Ipv4Addr; 13] = [
-    Ipv4Addr::new(198, 41, 0, 4),
-    Ipv4Addr::new(199, 9, 14, 201),
-    Ipv4Addr::new(192, 33, 4, 12),
-    Ipv4Addr::new(199, 7, 91, 13),
-    Ipv4Addr::new(192, 203, 230, 10),
-    Ipv4Addr::new(192, 5, 5, 241),
-    Ipv4Addr::new(192, 112, 36, 4),
-    Ipv4Addr::new(198, 97, 190, 53),
-    Ipv4Addr::new(192, 36, 148, 17),
-    Ipv4Addr::new(192, 58, 128, 30),
-    Ipv4Addr::new(193, 0, 14, 129),
-    Ipv4Addr::new(199, 7, 83, 42),
-    Ipv4Addr::new(202, 12, 27, 33),
+// TODO: Make this a list of hosts?
+const ROOT_NAMESERVERS: [IpAddr; 13] = [
+    IpAddr::V4(Ipv4Addr::new(198, 41, 0, 4)),
+    IpAddr::V4(Ipv4Addr::new(199, 9, 14, 201)),
+    IpAddr::V4(Ipv4Addr::new(192, 33, 4, 12)),
+    IpAddr::V4(Ipv4Addr::new(199, 7, 91, 13)),
+    IpAddr::V4(Ipv4Addr::new(192, 203, 230, 10)),
+    IpAddr::V4(Ipv4Addr::new(192, 5, 5, 241)),
+    IpAddr::V4(Ipv4Addr::new(192, 112, 36, 4)),
+    IpAddr::V4(Ipv4Addr::new(198, 97, 190, 53)),
+    IpAddr::V4(Ipv4Addr::new(192, 36, 148, 17)),
+    IpAddr::V4(Ipv4Addr::new(192, 58, 128, 30)),
+    IpAddr::V4(Ipv4Addr::new(193, 0, 14, 129)),
+    IpAddr::V4(Ipv4Addr::new(199, 7, 83, 42)),
+    IpAddr::V4(Ipv4Addr::new(202, 12, 27, 33)),
 ];
 
 pub async fn run(ip: &str, port: u16) {
@@ -132,70 +131,19 @@ pub async fn resolve(
 
     let mut buf = [0; 1024];
 
-    let mut ns_queue = NsQueue::new();
-    // TODO: Make this better
-    for ns in ROOT_NAMESERVERS {
-        ns_queue.insert(Name::new(""), Some(IpAddr::V4(ns)), 0);
-    }
-
-    {
-        let cache = cache.lock().unwrap();
-
-        for (level, subdomain) in question.name.iter_subdomains().enumerate() {
-            let level = level + 1;
-
-            let Some(authorities) = cache.get(&Name::new(&subdomain)) else {
-                continue;
-            };
-
-            for authority in authorities.iter().filter_map(|r| match &r.data {
-                RecordData::Ns(name) => {
-                    if let Some(records) = cache.get(name) {
-                        // TODO: If we don't have an A/AAAA record for this, add the name so we can resolve it and then use it
-                        for record in records {
-                            if let RecordData::A(ip) = record.data {
-                                return Some((name.clone(), Some(IpAddr::V4(ip))));
-                            }
-                        }
-                    }
-
-                    None
-                }
-
-                _ => None,
-            }) {
-                ns_queue.insert(authority.0, authority.1, level);
-            }
-        }
-    }
+    let mut nameserver = (
+        Name::new(""),
+        *ROOT_NAMESERVERS.choose(&mut rand::thread_rng()).unwrap(),
+    );
 
     let sock = UdpSocket::bind(("0.0.0.0", 0)).await.unwrap();
 
     // TODO: Some kind of work-limiting mechanism
     loop {
-        let Some(closest_nameserver) = ns_queue.pop() else {
-            return Err(DnsError::ServerFailure("failed to resolve".to_owned()))
-        };
+        let (ns_name, ns_ip) = nameserver;
 
-        let ip = if let Some(ip) = closest_nameserver.1 {
-            ip
-        } else {
-            let resolution = resolve(
-                Question::new(closest_nameserver.0.clone(), RecordType::A),
-                Arc::clone(&cache),
-            )
-            .await?;
-
-            let Some(ResourceRecord{data: RecordData::A(ip), ..}) = resolution
-            .iter()
-            .find(|rr| rr.type_ == RecordType::A) else {
-                continue;
-            };
-            (*ip).into()
-        };
-
-        debug!(address=?closest_nameserver, "querying nameserver");
-        sock.send_to(&query.to_bytes(), (ip, 53)).await.unwrap();
+        debug!(?ns_name, ?ns_ip, "querying nameserver");
+        sock.send_to(&query.to_bytes(), (ns_ip, 53)).await.unwrap();
 
         // TODO: Need to do validation of this message
         let response_len = sock.recv(&mut buf).await?;
@@ -229,7 +177,11 @@ pub async fn resolve(
                 };
 
                 info!("received cname from nameserver, re-starting resolution process");
-                let answer = resolve(Question::new(name.clone(), question.type_), cache).await?;
+                let answer = resolve(
+                    Question::new(name.clone(), question.type_),
+                    Arc::clone(&cache),
+                )
+                .await?;
 
                 response.extend(answer);
 
@@ -239,40 +191,61 @@ pub async fn resolve(
             panic!();
         }
 
-        let mut ns_records = message
-            .authorities
-            .iter()
-            .filter(|rr| rr.type_ == RecordType::Ns)
-            .peekable();
+        let (mut resolved, mut unresolved): (Vec<_>, Vec<_>) = {
+            // Lock once so we don't lock and unlock every iteration
+            let cache = cache.lock().unwrap();
 
-        if ns_records.peek().is_some() {
-            for record in ns_records {
-                let RecordData::Ns(authority_name) = &record.data else {
-                    unreachable!()
-                };
+            message
+                .authorities
+                .iter()
+                .filter_map(|rr| {
+                    if let RecordData::Ns(name) = &rr.data {
+                        Some(name)
+                    } else {
+                        None
+                    }
+                })
+                .partition_map(|name| {
+                    // If the ip is in the additionals
+                    if let Some(ip) = find_ip(name, &message.additionals) {
+                        return Either::Left((name.clone(), ip));
+                    }
 
-                if let Some(ResourceRecord {
-                    data: RecordData::A(ip),
-                    ..
-                }) = message
-                    .additionals
-                    .iter()
-                    .find(|r| &r.name == authority_name && r.type_ == RecordType::A)
-                {
-                    let level = record.name.matching_level(&question.name);
-                    trace!(?authority_name, level, "adding host to ns queue");
-                    ns_queue.insert(authority_name.clone(), Some(IpAddr::V4(*ip)), level);
-                } else {
-                    // TODO: Check the cache
-                    // The queue should also have separate stores at each level
-                    // for servers with only names, and servers with names & ips
-                    // so that we pick from the resolved ones first
-                    let level = record.name.matching_level(&question.name);
-                    ns_queue.insert(authority_name.clone(), None, level);
-                    continue;
-                }
-            }
+                    // If the ip is in the cache
+                    if let Some(cached_rrs) = cache.get(name) {
+                        if let Some(ip) = find_ip(name, cached_rrs) {
+                            return Either::Left((name.clone(), ip));
+                        }
+                    }
 
+                    Either::Right(name.clone())
+                })
+        };
+
+        if let Some(host) = resolved.pop() {
+            nameserver = host;
+            continue;
+        } else if let Some(name) = unresolved.pop() {
+            let answer = resolve(
+                Question::new(name.clone(), RecordType::A),
+                Arc::clone(&cache),
+            )
+            .await?;
+
+            let ip = answer
+                .iter()
+                .find_map(|rr| {
+                    if let RecordData::A(ip) = rr.data {
+                        Some(IpAddr::V4(ip))
+                    } else {
+                        None
+                    }
+                })
+                .ok_or(DnsError::ServerFailure(
+                    "failed to resolve next nameserver".to_owned(),
+                ))?;
+
+            nameserver = (name, ip);
             continue;
         }
 
@@ -288,4 +261,20 @@ pub async fn resolve(
 
         panic!()
     }
+}
+
+fn find_ip(name: &Name, rr_set: &[ResourceRecord]) -> Option<IpAddr> {
+    for rr in rr_set {
+        if &rr.name != name {
+            continue;
+        }
+
+        match rr.data {
+            RecordData::A(ip) => return Some(IpAddr::V4(ip)),
+            // RecordData::Aaaa(ip) => return Some(IpAddr::V6(ip)),
+            _ => {}
+        }
+    }
+
+    None
 }
