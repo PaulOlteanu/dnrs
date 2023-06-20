@@ -23,3 +23,4 @@ tokio = { version = "1.28", features = [
 itertools = "0.10.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+indexmap = "1.9.3"

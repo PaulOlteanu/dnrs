@@ -2,11 +2,11 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 
 use dnrs::Name;
-use rand::seq::SliceRandom;
+use indexmap::{IndexMap, IndexSet};
 use rand::Rng;
 
 type QueueLevel = usize;
-type HostLists = (Vec<(Name, IpAddr)>, Vec<Name>);
+type HostLists = (IndexMap<Name, IpAddr>, IndexSet<Name>);
 type Queue = HashMap<QueueLevel, HostLists>;
 
 #[derive(Clone, Default, Debug)]
@@ -29,11 +29,14 @@ impl NsQueue {
         self.max_level = self.max_level.max(level);
         self.inserted_levels.insert(level);
 
-        let lists = self.queue.entry(level).or_insert((Vec::new(), Vec::new()));
+        let lists: &mut HostLists = self
+            .queue
+            .entry(level)
+            .or_insert((IndexMap::new(), IndexSet::new()));
         if let Some(ip) = ip {
-            lists.0.push((name, ip));
+            lists.0.insert(name, ip);
         } else {
-            lists.1.push(name);
+            lists.1.insert(name);
         }
     }
 
@@ -43,12 +46,17 @@ impl NsQueue {
     pub fn peek(&self) -> Option<(&Name, Option<IpAddr>)> {
         let lists = self.queue.get(&self.max_level)?;
 
-        let mut rng = rand::thread_rng();
-
-        if let Some((name, ip)) = lists.0.choose(&mut rng) {
-            Some((name, Some(*ip)))
+        if !lists.0.is_empty() {
+            let idx = rand::thread_rng().gen_range(0..lists.0.len());
+            lists
+                .0
+                .get_index(idx)
+                .map(|(name, addr)| (name, Some(*addr)))
+        } else if !lists.1.is_empty() {
+            let idx = rand::thread_rng().gen_range(0..lists.1.len());
+            lists.1.get_index(idx).map(|name| (name, None))
         } else {
-            Some((lists.1.choose(&mut rng)?, None))
+            None
         }
     }
 
@@ -57,11 +65,13 @@ impl NsQueue {
         let lists = self.queue.get_mut(&self.max_level)?;
         if !lists.0.is_empty() {
             let idx = rand::thread_rng().gen_range(0..lists.0.len());
-            let result = lists.0.swap_remove(idx);
-            Some((result.0, Some(result.1)))
+            lists
+                .0
+                .swap_remove_index(idx)
+                .map(|(name, ip)| (name, Some(ip)))
         } else if !lists.1.is_empty() {
             let idx = rand::thread_rng().gen_range(0..lists.1.len());
-            Some((lists.1.swap_remove(idx), None))
+            lists.1.swap_remove_index(idx).map(|name| (name, None))
         } else {
             None
         }
