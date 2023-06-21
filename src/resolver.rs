@@ -193,7 +193,7 @@ pub async fn resolve(
 
         let (mut resolved, mut unresolved): (Vec<_>, Vec<_>) = {
             // Lock once so we don't lock and unlock every iteration
-            let mut cache = cache.lock().unwrap();
+            let cache = cache.lock().unwrap();
 
             message
                 .authorities
@@ -232,18 +232,9 @@ pub async fn resolve(
             )
             .await?;
 
-            let ip = answer
-                .iter()
-                .find_map(|rr| {
-                    if let RecordData::A(ip) = rr.data {
-                        Some(IpAddr::V4(ip))
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(DnsError::ServerFailure(
-                    "failed to resolve next nameserver".to_owned(),
-                ))?;
+            let ip = find_ip(&name, &answer).ok_or(DnsError::ServerFailure(
+                "failed to resolve next nameserver".to_owned(),
+            ))?;
 
             nameserver = (name, ip);
             continue;
@@ -261,6 +252,13 @@ pub async fn resolve(
 
         panic!()
     }
+}
+
+fn find_iter<I>(name: &Name, records: I, t: Option<RecordType>) -> Option<ResourceRecord>
+where
+    I: IntoIterator<Item = ResourceRecord>,
+{
+    todo!()
 }
 
 fn find_ip(name: &Name, rr_set: &[ResourceRecord]) -> Option<IpAddr> {

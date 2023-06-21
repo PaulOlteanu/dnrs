@@ -1,3 +1,4 @@
+use bytes::{Bytes, BytesMut};
 use std::io::Cursor;
 
 use tracing::instrument;
@@ -26,7 +27,6 @@ impl Message {
         self.header.num_questions += 1;
         self.questions.push(question)
     }
-
     pub fn add_answer(&mut self, answer: ResourceRecord) {
         self.header.num_answers += 1;
         self.answers.push(answer)
@@ -45,8 +45,8 @@ impl Message {
 
 impl Networkable for Message {
     #[instrument(level = "debug", skip_all)]
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut response = Vec::new();
+    fn to_bytes(&self) -> Bytes {
+        let mut response = BytesMut::new();
         response.extend_from_slice(&self.header.to_bytes());
 
         for question in self.questions.iter() {
@@ -65,7 +65,7 @@ impl Networkable for Message {
             response.extend_from_slice(&record.to_bytes())
         }
 
-        response
+        response.into()
     }
 
     #[instrument(level = "debug", skip_all)]

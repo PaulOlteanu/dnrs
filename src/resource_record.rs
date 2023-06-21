@@ -1,3 +1,4 @@
+use bytes::{BufMut, Bytes, BytesMut};
 use std::io::Cursor;
 
 use bytes::Buf;
@@ -23,10 +24,10 @@ pub struct ResourceRecord {
 
 impl Networkable for ResourceRecord {
     #[instrument(level = "trace", skip_all)]
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut ret = Vec::new();
+    fn to_bytes(&self) -> Bytes {
+        let mut ret = BytesMut::new();
         ret.extend_from_slice(&self.name.to_bytes());
-        ret.extend_from_slice(&(self.type_ as u16).to_be_bytes());
+        ret.put_u16(self.type_.to_int());
         ret.extend_from_slice(&self.class.to_be_bytes());
         ret.extend_from_slice(&self.ttl.to_be_bytes());
         let data = self.data.to_bytes();
@@ -34,7 +35,7 @@ impl Networkable for ResourceRecord {
         ret.extend_from_slice(&rd_length.to_be_bytes());
         ret.extend_from_slice(&data);
 
-        ret
+        ret.into()
     }
 
     #[instrument(level = "trace", skip_all)]

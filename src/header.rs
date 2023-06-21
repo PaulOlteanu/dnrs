@@ -1,3 +1,6 @@
+use bytes::BufMut;
+use bytes::Bytes;
+use bytes::BytesMut;
 use std::io::Cursor;
 
 use bitfield::bitfield;
@@ -34,8 +37,10 @@ bitfield! {
 
 impl Networkable for Flags {
     #[instrument(level = "trace", skip_all)]
-    fn to_bytes(&self) -> Vec<u8> {
-        self.0.to_be_bytes().to_vec()
+    fn to_bytes(&self) -> Bytes {
+        let mut ret = BytesMut::with_capacity(2);
+        ret.put_u16(self.0);
+        ret.into()
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -72,16 +77,16 @@ impl Header {
 
 impl Networkable for Header {
     #[instrument(level = "trace", skip_all)]
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut ret = Vec::with_capacity(12);
-        ret.extend_from_slice(&self.id.to_be_bytes());
+    fn to_bytes(&self) -> Bytes {
+        let mut ret = BytesMut::with_capacity(12);
+        ret.put_u16(self.id);
         ret.extend_from_slice(&self.flags.to_bytes());
-        ret.extend_from_slice(&self.num_questions.to_be_bytes());
-        ret.extend_from_slice(&self.num_answers.to_be_bytes());
-        ret.extend_from_slice(&self.num_authorities.to_be_bytes());
-        ret.extend_from_slice(&self.num_additionals.to_be_bytes());
+        ret.put_u16(self.num_questions);
+        ret.put_u16(self.num_answers);
+        ret.put_u16(self.num_authorities);
+        ret.put_u16(self.num_additionals);
 
-        ret
+        ret.into()
     }
 
     #[instrument(level = "trace", skip_all)]

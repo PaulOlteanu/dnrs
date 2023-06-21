@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter::Filter,
-};
+use std::collections::{HashMap, HashSet};
 
 use dnrs::{Name, RecordType, ResourceRecord};
 

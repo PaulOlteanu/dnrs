@@ -1,3 +1,4 @@
+use bytes::{Bytes, BytesMut};
 use std::io::Cursor;
 
 use bytes::Buf;
@@ -25,14 +26,14 @@ impl Question {
 
 impl Networkable for Question {
     #[instrument(level = "trace", skip_all)]
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut ret = Vec::new();
+    fn to_bytes(&self) -> Bytes {
+        let mut ret = BytesMut::new();
 
         ret.extend_from_slice(&self.name.to_bytes());
         ret.extend_from_slice(&(self.type_ as u16).to_be_bytes());
         ret.extend_from_slice(&self.class.to_be_bytes());
 
-        ret
+        ret.into()
     }
 
     #[instrument(level = "trace", skip_all)]

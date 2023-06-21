@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::io::Cursor;
 
-use bytes::Buf;
+use bytes::{Buf, Bytes, BytesMut, BufMut};
 
 use super::Networkable;
 use crate::DnsError;
@@ -68,17 +68,17 @@ impl Display for Name {
 }
 
 impl Networkable for Name {
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut ret = Vec::new();
+    fn to_bytes(&self) -> Bytes {
+        let mut ret = BytesMut::new();
 
         for section in self.name.split('.') {
-            ret.push(section.len() as u8);
+            ret.put_u8(section.len() as u8);
             ret.extend_from_slice(section.as_bytes());
         }
 
-        ret.push(0);
+        ret.put_u8(0);
 
-        ret
+        ret.into()
     }
 
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {

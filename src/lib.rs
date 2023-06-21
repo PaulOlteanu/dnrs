@@ -1,6 +1,7 @@
 use std::io::Cursor;
 
 mod error;
+use bytes::Bytes;
 pub use error::DnsError;
 
 mod header;
@@ -22,7 +23,7 @@ mod record_type;
 pub use record_type::RecordType;
 
 pub trait Networkable: Sized {
-    fn to_bytes(&self) -> Vec<u8>;
+    fn to_bytes(&self) -> Bytes;
 
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError>;
 }
