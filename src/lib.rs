@@ -24,6 +24,5 @@ pub use record_type::RecordType;
 
 pub trait Networkable: Sized {
     fn to_bytes(&self) -> Bytes;
-
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError>;
 }

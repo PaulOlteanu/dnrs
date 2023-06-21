@@ -254,11 +254,21 @@ pub async fn resolve(
     }
 }
 
-fn find_iter<I>(name: &Name, records: I, t: Option<RecordType>) -> Option<ResourceRecord>
+fn find_iter<'a, I>(
+    name: Name,
+    records: I,
+    t: Option<RecordType>,
+) -> impl Iterator<Item = &'a ResourceRecord>
 where
-    I: IntoIterator<Item = ResourceRecord>,
+    I: IntoIterator<Item = &'a ResourceRecord>,
 {
-    todo!()
+    records.into_iter().filter(move |rr| {
+        if let Some(type_filter) = t {
+            rr.name == name && rr.type_ == type_filter
+        } else {
+            rr.name == name
+        }
+    })
 }
 
 fn find_ip(name: &Name, rr_set: &[ResourceRecord]) -> Option<IpAddr> {
