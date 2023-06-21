@@ -193,7 +193,7 @@ pub async fn resolve(
 
         let (mut resolved, mut unresolved): (Vec<_>, Vec<_>) = {
             // Lock once so we don't lock and unlock every iteration
-            let cache = cache.lock().unwrap();
+            let mut cache = cache.lock().unwrap();
 
             message
                 .authorities
@@ -212,8 +212,8 @@ pub async fn resolve(
                     }
 
                     // If the ip is in the cache
-                    if let Some(cached_rrs) = cache.get(name) {
-                        if let Some(ip) = find_ip(name, cached_rrs) {
+                    if let Some(cached_rrs) = cache.get_record_set(name) {
+                        if let Some(ip) = find_ip(name, &cached_rrs.iter().cloned().collect_vec()) {
                             return Either::Left((name.clone(), ip));
                         }
                     }

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use bytes::Buf;
-use num_traits::FromPrimitive;
+use derivative::Derivative;
 use tracing::instrument;
 
 use super::{Name, Networkable};
@@ -10,13 +10,14 @@ use crate::{DnsError, RecordType};
 mod record_data;
 pub use record_data::RecordData;
 
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ResourceRecord {
     pub name: Name,
     pub type_: RecordType,
     pub class: u16,
+    #[derivative(Hash = "ignore", PartialEq = "ignore")]
     pub ttl: u32,
-    pub rd_length: u16,
     pub data: RecordData,
 }
 
@@ -40,22 +41,18 @@ impl Networkable for ResourceRecord {
     fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
         let name = Name::from_bytes(bytes).unwrap();
         let type_ = bytes.get_u16();
-        let type_ = FromPrimitive::from_u16(type_)
-            .ok_or(DnsError::FormatError)
-            .unwrap();
+        let type_ = RecordType::from_int(type_).ok_or(DnsError::FormatError)?;
         let class = bytes.get_u16();
         let ttl = bytes.get_u32();
-        let rd_length = bytes.get_u16();
+        let data_length = bytes.get_u16();
 
-        // let data = RecordData::from_bytes(type_, rd_length, bytes)?;
-        let data = RecordData::from_bytes(type_, rd_length, bytes).unwrap();
+        let data = RecordData::from_bytes(type_, data_length, bytes).unwrap();
 
         Ok(Self {
             name,
             type_,
             class,
             ttl,
-            rd_length,
             data,
         })
     }

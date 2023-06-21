@@ -1,7 +1,6 @@
 use std::io::Cursor;
 
 use bytes::Buf;
-use num_traits::cast::FromPrimitive;
 use tracing::instrument;
 
 use super::{Name, Networkable};
@@ -41,7 +40,7 @@ impl Networkable for Question {
         let name = Name::from_bytes(bytes).unwrap();
 
         let type_ = bytes.get_u16();
-        let type_ = RecordType::from_u16(type_).ok_or(DnsError::FormatError)?;
+        let type_ = RecordType::from_int(type_).ok_or(DnsError::FormatError)?;
 
         let class = bytes.get_u16();
 

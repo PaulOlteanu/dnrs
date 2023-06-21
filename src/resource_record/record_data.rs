@@ -6,7 +6,7 @@ use tracing::warn;
 
 use crate::{DnsError, Name, Networkable, RecordType};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum RecordData {
     A(Ipv4Addr),
     Ns(Name),
