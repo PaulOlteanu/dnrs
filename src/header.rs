@@ -7,7 +7,7 @@ use bitfield::bitfield;
 use bytes::Buf;
 use tracing::{instrument, warn};
 
-use super::Networkable;
+use super::ByteSer;
 use crate::DnsError;
 
 bitfield! {
@@ -35,25 +35,25 @@ bitfield! {
     pub rcode, set_rcode: 3, 0;
 }
 
-impl Networkable for Flags {
+impl ByteSer for Flags {
     #[instrument(level = "trace", skip_all)]
     fn to_bytes(&self) -> Bytes {
         let mut ret = BytesMut::with_capacity(2);
         ret.put_u16(self.0);
         ret.into()
     }
-
-    #[instrument(level = "trace", skip_all)]
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
-        if bytes.remaining() < 2 {
-            return Err(DnsError::FormatError);
-        }
-
-        let flags = bytes.get_u16();
-
-        Ok(Self(flags))
-    }
 }
+
+// #[instrument(level = "trace", skip_all)]
+// fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
+//     if bytes.remaining() < 2 {
+//         return Err(DnsError::FormatError);
+//     }
+
+//     let flags = bytes.get_u16();
+
+//     Ok(Self(flags))
+// }
 
 #[derive(Debug, Default)]
 pub struct Header {
@@ -75,7 +75,7 @@ impl Header {
     }
 }
 
-impl Networkable for Header {
+impl ByteSer for Header {
     #[instrument(level = "trace", skip_all)]
     fn to_bytes(&self) -> Bytes {
         let mut ret = BytesMut::with_capacity(12);
@@ -88,28 +88,28 @@ impl Networkable for Header {
 
         ret.into()
     }
-
-    #[instrument(level = "trace", skip_all)]
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
-        if bytes.remaining() < 12 {
-            warn!("insufficient remaining bytes");
-            return Err(DnsError::FormatError);
-        }
-
-        let id = bytes.get_u16();
-        let flags = Flags::from_bytes(bytes)?;
-        let qd_count = bytes.get_u16();
-        let an_count = bytes.get_u16();
-        let ns_count = bytes.get_u16();
-        let ar_count = bytes.get_u16();
-
-        Ok(Self {
-            id,
-            flags,
-            num_questions: qd_count,
-            num_answers: an_count,
-            num_authorities: ns_count,
-            num_additionals: ar_count,
-        })
-    }
 }
+
+// #[instrument(level = "trace", skip_all)]
+// fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
+//     if bytes.remaining() < 12 {
+//         warn!("insufficient remaining bytes");
+//         return Err(DnsError::FormatError);
+//     }
+
+//     let id = bytes.get_u16();
+//     let flags = Flags::from_bytes(bytes)?;
+//     let qd_count = bytes.get_u16();
+//     let an_count = bytes.get_u16();
+//     let ns_count = bytes.get_u16();
+//     let ar_count = bytes.get_u16();
+
+//     Ok(Self {
+//         id,
+//         flags,
+//         num_questions: qd_count,
+//         num_answers: an_count,
+//         num_authorities: ns_count,
+//         num_additionals: ar_count,
+//     })
+// }

@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use tracing::instrument;
 
-use super::{Header, Networkable, Question, ResourceRecord};
+use super::{ByteSer, Header, Question, ResourceRecord};
 use crate::DnsError;
 
 #[derive(Debug, Default)]
@@ -43,7 +43,7 @@ impl Message {
     }
 }
 
-impl Networkable for Message {
+impl ByteSer for Message {
     #[instrument(level = "debug", skip_all)]
     fn to_bytes(&self) -> Bytes {
         let mut response = BytesMut::new();
@@ -53,51 +53,51 @@ impl Networkable for Message {
             response.extend_from_slice(&question.to_bytes())
         }
 
-        for record in self.answers.iter() {
-            response.extend_from_slice(&record.to_bytes())
-        }
+        // for record in self.answers.iter() {
+        //     response.extend_from_slice(&record.to_bytes())
+        // }
 
-        for record in self.authorities.iter() {
-            response.extend_from_slice(&record.to_bytes())
-        }
+        // for record in self.authorities.iter() {
+        //     response.extend_from_slice(&record.to_bytes())
+        // }
 
-        for record in self.additionals.iter() {
-            response.extend_from_slice(&record.to_bytes())
-        }
+        // for record in self.additionals.iter() {
+        //     response.extend_from_slice(&record.to_bytes())
+        // }
 
         response.into()
     }
-
-    #[instrument(level = "debug", skip_all)]
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
-        let header = Header::from_bytes(bytes).unwrap();
-
-        let mut questions = Vec::new();
-        for _ in 0..header.num_questions {
-            questions.push(Question::from_bytes(bytes).unwrap());
-        }
-
-        let mut answers = Vec::new();
-        for _ in 0..header.num_answers {
-            answers.push(ResourceRecord::from_bytes(bytes).unwrap());
-        }
-
-        let mut authorities = Vec::new();
-        for _ in 0..header.num_authorities {
-            authorities.push(ResourceRecord::from_bytes(bytes).unwrap());
-        }
-
-        let mut additionals = Vec::new();
-        for _ in 0..header.num_additionals {
-            additionals.push(ResourceRecord::from_bytes(bytes).unwrap());
-        }
-
-        Ok(Self {
-            header,
-            questions,
-            answers,
-            authorities,
-            additionals,
-        })
-    }
 }
+
+// #[instrument(level = "debug", skip_all)]
+// fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
+//     let header = Header::from_bytes(bytes).unwrap();
+
+//     let mut questions = Vec::new();
+//     for _ in 0..header.num_questions {
+//         questions.push(Question::from_bytes(bytes).unwrap());
+//     }
+
+//     let mut answers = Vec::new();
+//     for _ in 0..header.num_answers {
+//         answers.push(ResourceRecord::from_bytes(bytes).unwrap());
+//     }
+
+//     let mut authorities = Vec::new();
+//     for _ in 0..header.num_authorities {
+//         authorities.push(ResourceRecord::from_bytes(bytes).unwrap());
+//     }
+
+//     let mut additionals = Vec::new();
+//     for _ in 0..header.num_additionals {
+//         additionals.push(ResourceRecord::from_bytes(bytes).unwrap());
+//     }
+
+//     Ok(Self {
+//         header,
+//         questions,
+//         answers,
+//         authorities,
+//         additionals,
+//     })
+// }

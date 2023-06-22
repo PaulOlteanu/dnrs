@@ -1,9 +1,9 @@
 use std::fmt::Display;
 use std::io::Cursor;
 
-use bytes::{Buf, Bytes, BytesMut, BufMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use super::Networkable;
+use super::ByteSer;
 use crate::DnsError;
 
 // #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -67,7 +67,7 @@ impl Display for Name {
     }
 }
 
-impl Networkable for Name {
+impl ByteSer for Name {
     fn to_bytes(&self) -> Bytes {
         let mut ret = BytesMut::new();
 
@@ -80,41 +80,41 @@ impl Networkable for Name {
 
         ret.into()
     }
-
-    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
-        let mut parts: Vec<String> = Vec::new();
-        loop {
-            let len = bytes.get_u8() as usize;
-            if len == 0 {
-                break;
-            }
-
-            if (len & 0b1100_0000) >> 6 == 0b11 {
-                // Compressed
-                let pointer = (((len & 0b0011_1111) as u16) << 8) | (bytes.get_u8() as u16);
-                let position = bytes.position();
-                bytes.set_position(pointer as u64);
-                let n = Self::from_bytes(bytes)?;
-                bytes.set_position(position);
-                parts.push(n.name);
-                break;
-            } else {
-                // Uncompressed
-                if bytes.remaining() < len {
-                    return Err(DnsError::FormatError);
-                }
-
-                let chars = bytes.copy_to_bytes(len);
-                let s = std::str::from_utf8(&chars).or(Err(DnsError::FormatError))?;
-                parts.push(s.to_owned());
-            }
-        }
-
-        let name = parts.join(".");
-
-        Ok(Self::new(&name))
-    }
 }
+
+// fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError> {
+//     let mut parts: Vec<String> = Vec::new();
+//     loop {
+//         let len = bytes.get_u8() as usize;
+//         if len == 0 {
+//             break;
+//         }
+
+//         if (len & 0b1100_0000) >> 6 == 0b11 {
+//             // Compressed
+//             let pointer = (((len & 0b0011_1111) as u16) << 8) | (bytes.get_u8() as u16);
+//             let position = bytes.position();
+//             bytes.set_position(pointer as u64);
+//             let n = Self::from_bytes(bytes)?;
+//             bytes.set_position(position);
+//             parts.push(n.name);
+//             break;
+//         } else {
+//             // Uncompressed
+//             if bytes.remaining() < len {
+//                 return Err(DnsError::FormatError);
+//             }
+
+//             let chars = bytes.copy_to_bytes(len);
+//             let s = std::str::from_utf8(&chars).or(Err(DnsError::FormatError))?;
+//             parts.push(s.to_owned());
+//         }
+//     }
+
+//     let name = parts.join(".");
+
+//     Ok(Self::new(&name))
+// }
 
 #[cfg(test)]
 mod tests {

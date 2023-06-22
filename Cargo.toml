@@ -22,3 +22,8 @@ itertools = "0.10.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 derivative = "2.2.0"
+dnrs-macro = { path = "dnrs-macro" }
+dnrs-model = { path = "dnrs-model" }
+
+[workspace]
+members = ["dnrs-macro", "dnrs-model"]
