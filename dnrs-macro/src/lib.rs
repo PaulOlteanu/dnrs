@@ -1,6 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse::Parser, parse_macro_input, parse_quote, DeriveInput};
+use syn::parse::Parser;
+use syn::{parse_macro_input, parse_quote, DeriveInput};
 
 #[proc_macro_attribute]
 pub fn resource_record(_args: TokenStream, input: TokenStream) -> TokenStream {

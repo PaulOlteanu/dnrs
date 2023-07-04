@@ -2,7 +2,6 @@ use std::io::Cursor;
 
 mod error;
 use bytes::Bytes;
-use enum_dispatch::enum_dispatch;
 pub use error::DnsError;
 
 mod header;
@@ -18,14 +17,14 @@ mod question;
 pub use question::Question;
 
 mod resource_record;
-pub use resource_record::ResourceRecord;
+pub use resource_record::{
+    RecordData, RecordDataFilter, RecordDataMutRefFilter, RecordDataRefFilter, ResourceRecord,
+};
 
 mod record_type;
 pub use record_type::RecordType;
 
-// use crate::resource_record::{Aaaa, Cname, Mx, Ns, Soa, Txt, A};
-
-// #[enum_dispatch]
-pub trait ByteSer {
+pub trait Networkable: Sized {
     fn to_bytes(&self) -> Bytes;
+    fn from_bytes(bytes: &mut Cursor<&[u8]>) -> Result<Self, DnsError>;
 }
